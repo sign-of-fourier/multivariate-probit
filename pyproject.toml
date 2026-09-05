@@ -34,6 +34,10 @@ Issues = "https://github.com/sign-of-fourier/multivariate-probit/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/multivariate_probit"]
 
+[tool.hatch.build.targets.sdist]
+# Internal working notes; not useful to a package consumer.
+exclude = ["CLAUDE.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
