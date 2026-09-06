@@ -111,6 +111,8 @@ point estimate. Known gaps are listed in
 - **[docs/api.md](docs/api.md)** — parameters, attributes, methods, extension
   points
 - **[docs/limitations.md](docs/limitations.md)** — known gaps and roadmap
+- **[docs/studies/](docs/studies/)** — the research archive: what was measured,
+  what it settled, and what it left open
 
 ## Development
 

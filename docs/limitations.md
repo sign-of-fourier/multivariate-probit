@@ -29,7 +29,7 @@ fully specified model. This is not a bias that better estimation removes, and
 it cannot be diagnosed: a margin that is correctly scaled but incomplete and
 one that is over-dispersed but complete produce identical marginal data while
 implying different Σ. Widen the feature set if the structural quantity is what
-is wanted. See [Gap A](ifm.md#gap-a--the-estimand-moves).
+is wanted. See [Gap A](ifm.md#gap-a--the-estimand-moves) and [studies/margin-gaps.md](studies/margin-gaps.md).
 
 **`calibration_` is a scale check, not a calibration assessment.** It is the
 Cox calibration slope and nothing more: a slope of 1 rules out a first-order
@@ -133,7 +133,8 @@ A](ifm.md#gap-a--the-estimand-moves), a well-defined change of estimand) —
 something. That is an argument with an assumption in it, not a result: it
 requires the calibrator to be rich enough and genuinely out of fold. Nothing
 here measures it. The `rf` preset is the natural vehicle, since vote shares are
-the textbook uncalibrated probability and the preset is untested anyway.
+the textbook uncalibrated probability and the preset is untested anyway. Tracked in
+[studies/margin-gaps.md](studies/margin-gaps.md).
 
 **Sparse input.** Dense arrays only; `X` is coerced with `numpy.asarray`.
 

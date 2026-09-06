@@ -279,10 +279,9 @@ simply not the structural correlation of a fully specified model.
 
 The two terms pull opposite ways. `Cov(w_j, w_k) > 0` — margins missing the
 *same* thing — raises ρ_recovered, with no bound and no fixed sign in general;
-`v_j > 0` shrinks whatever the numerator is. Measured against known v on
-synthetic draws with independent omitted variables, so the covariance term
-vanishes and only the denominator acts, predicted `ρ / (1 + v)` against
-recovered gave 0.500/0.501, 0.400/0.386, 0.250/0.248 and 0.154/0.155.
+`v_j > 0` shrinks whatever the numerator is. The denominator has been checked
+against known v on synthetic draws; the numerator has not
+([studies/margin-gaps.md](studies/margin-gaps.md)).
 
 Nothing can correct this, and no diagnostic can detect it. The marginal law of
 (Y_j, η̂_j) depends on c_j and v_j only through `c_j / sqrt(1 + v_j)`: a margin
@@ -337,14 +336,13 @@ precisely the quantity separating the two gaps:
 Two consequences follow, and both matter more than the number itself:
 
 - A quiet diagnostic is **not** evidence that Σ is trustworthy. It rules out
-  one of the two mechanisms, and not the one that moves Σ furthest. On the
-  synthetic Gap A draws above, the slope read 1.00 across v from 0 to 2.25
-  while ρ fell from 0.501 to 0.155.
+  one of the two mechanisms, and not the one that moves Σ furthest. On
+  synthetic Gap A draws the slope holds at 1.00 while ρ falls by a factor of
+  three ([studies/margin-gaps.md](studies/margin-gaps.md)).
 - A slope far *above* 1 is a third thing again: the index has absorbed the
   noise of the rows it is being scored on, so the labels look more predictable
   than the index admits. That is the memorisation signature cross-fitting
-  exists to remove — an over-capacity boosted margin reads 5.24 in-sample and
-  0.45 cross-fitted on the same data.
+  exists to remove.
 
 Neither gap is corrected. Gap A cannot be, for the identifiability reason
 above. Gap B could be, since the slope estimates the very reliability that
@@ -414,94 +412,18 @@ support, and nothing constrains the result to be consistent with the marginals.
 
 ## Validation on real data
 
-Everything above was developed against synthetic draws, where the true Σ is
-known. The claim that matters most in practice — that the composite pairwise
-objective is a legitimate substitute for the full likelihood — was checked on
-the UCI *Default of Credit Card Clients* data (Yeh & Lien, 2009): 30,000
-clients, three binary outcomes (any repayment delay in September, July and
-April 2005, i.e. `PAY_0`, `PAY_3`, `PAY_6` > 0), five demographic predictors
-(`LIMIT_BAL`, `SEX`, `EDUCATION`, `MARRIAGE`, `AGE`), an 80/20 split and
-`cv=5`. Outcome prevalence was 22.8 / 14.0 / 10.2 percent. The dataset is not
-redistributed with this library.
+The composite pairwise objective was checked against the full likelihood on the
+UCI *Default of Credit Card Clients* data: 30,000 clients, three binary
+repayment-delay outcomes, five demographic predictors. At d = 3 with moderate
+positive correlations, `"pairwise"` gives up about 1e-4 nats/row of held-out
+likelihood and saves two orders of magnitude of fitting time, and both modes
+reproduce an independent tetrachoric fit on the same data.
 
-Both modes were run on identical margins — same inner model, same seed, same
-folds — so the only thing varying is stage two.
-
-Fitted correlations (ρ_12, ρ_13, ρ_23):
-
-| inner | joint | pairwise | max entrywise difference |
-| --- | --- | --- | --- |
-| linear | 0.669, 0.523, 0.682 | 0.673, 0.535, 0.690 | 0.012 |
-| xgboost | 0.655, 0.510, 0.667 | 0.661, 0.524, 0.676 | 0.014 |
-
-Pairwise came out slightly higher in every entry — a small systematic offset,
-not noise.
-
-Cost of stage two alone, on the same cross-fitted η (30,000 rows, d = 3):
-
-| inner | pairwise | joint | ratio |
-| --- | --- | --- | --- |
-| linear | 0.53 s | 60.3 s | 114x |
-| xgboost | 0.52 s | 45.6 s | 88x |
-
-Held-out mean joint log-likelihood:
-
-| inner | joint | pairwise | difference |
-| --- | --- | --- | --- |
-| linear | -1.09124 | -1.09131 | 0.00007 nats/row |
-| xgboost | -1.08451 | -1.08461 | 0.00010 nats/row |
-
-Per-row `P(all three late)` differed between modes by 0.001 on average, 0.0026
-at worst. Marginal AUC, log-loss and Brier are identical across modes by
-construction, since the margins are stage one.
-
-An independent earlier tetrachoric/Gaussian-copula fit on the same data found
-correlations in the 0.51-0.66 range, with AUC 0.72, log-loss 0.173 and Brier
-0.043 for the joint event "late in all three months". Both modes reproduce it:
-correlations 0.510-0.655, and for that same joint event AUC 0.7224, log-loss
-0.1827, Brier 0.0458.
-
-Margin calibration slopes on the same fits were 0.977 / 0.991 / 0.992 for the
-linear margins and 0.927 / 0.949 / 0.956 for the boosted ones — all inside the
-warning band, so the check is silent on this dataset. For scale, a 40-replicate
-bootstrap refitting both stages on the training split (n = 24,000, linear
-margins, pairwise) put the sampling standard deviation of the three
-correlations at 0.008, 0.011 and 0.010, and of the three slopes at about
-0.0035.
-
-That comparison is the reason the warning band is a loose fixed interval rather
-than a standard-error rule. The slope is estimated several times more precisely
-than the correlation it is diagnosing, so at this sample size a departure from
-1 can be overwhelmingly significant and still immaterial: the linear margins
-above sit 2 to 6 standard errors from 1.0 while reproducing published
-correlations. A trigger keyed to significance would fire on essentially every
-real fit. A loose band asks whether the departure is gross, which is the only
-version worth interrupting a caller about.
-
-**Conclusion.** At d = 3 with moderate positive correlations, `"pairwise"`
-gives up about 1e-4 nats/row of held-out likelihood and saves two orders of
-magnitude of fitting time. That is a strong result for the composite objective,
-but it is evidence from one regime only: Σ was well conditioned throughout
-(smallest eigenvalue 0.27 or above), so the projection step never engaged, and
-nothing here speaks to large d, near-singular Σ, or strongly mixed-sign
-correlations — the settings where a composite likelihood is most likely to
-diverge from the full one.
-
-Note also what this study does *not* establish. Cross-fitting was used
-throughout, so these runs assume the case made above rather than retesting it;
-the in-sample bias measurement remains synthetic. Nor does it validate Σ
-against a known truth — there is none here. It compares two objectives on
-identical margins.
-
-The correlations themselves should be read with their conditioning set in mind.
-The three outcomes are repayment delay for the **same client** in three
-different months, and the predictors are five demographics. Persistent
-unobserved creditworthiness is exactly a w shared across all three outcomes, so
-`Cov(w_j, w_k)` is large and positive by construction and much of the 0.51-0.68
-is that shared heterogeneity. That is what Σ conditional on demographics
-*means*, and it is why the independent tetrachoric fit agrees: it conditions on
-the same information. A model given repayment history would report smaller
-correlations without either fit being wrong.
+That is evidence from one regime only — Σ well conditioned throughout, so the
+projection step never engaged — and it validates the *objective*, not Σ itself,
+since the true Σ is unknown there. Numbers, configuration, the sampling noise
+floor and the full list of what it does not establish are in
+[studies/uci-credit.md](studies/uci-credit.md).
 
 ## Computational cost
 

@@ -17,6 +17,7 @@ tests/            test_linear.py, test_xgboost.py, test_calibration.py,
                   test_contract.py, test_correlation_projection.py,
                   conftest.py (adds src/ to path)
 docs/             ifm.md, implementation.md, api.md, limitations.md
+docs/studies/     research archive, one .md per study; data never committed
 ```
 
 ## Commands
@@ -57,6 +58,11 @@ this backwards; the measurement is in `docs/ifm.md`, and
 - **One fact, one home.** README links, it does not duplicate. Bias mechanism
   lives in `ifm.md`; accuracy figures live in `implementation.md`; parameter
   tables live in `api.md`; gaps live in `limitations.md`.
+- **Mechanism in `ifm.md`, measurements in `docs/studies/`.** A derivation
+  keeps only the numbers it needs to be legible and links to the study for
+  the rest. A study states its question first, gives data provenance rather
+  than data, records the exact configuration, and ends with what it does not
+  establish and what is still open. Datasets are never committed.
 - **Impersonal voice.** No "we", no "our". Empirical claims keep their
   provenance through phrasing ("testing across synthetic and real data
   confirmed"), not through a pronoun.
