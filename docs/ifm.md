@@ -461,6 +461,23 @@ correlations in the 0.51-0.66 range, with AUC 0.72, log-loss 0.173 and Brier
 correlations 0.510-0.655, and for that same joint event AUC 0.7224, log-loss
 0.1827, Brier 0.0458.
 
+Margin calibration slopes on the same fits were 0.977 / 0.991 / 0.992 for the
+linear margins and 0.927 / 0.949 / 0.956 for the boosted ones — all inside the
+warning band, so the check is silent on this dataset. For scale, a 40-replicate
+bootstrap refitting both stages on the training split (n = 24,000, linear
+margins, pairwise) put the sampling standard deviation of the three
+correlations at 0.008, 0.011 and 0.010, and of the three slopes at about
+0.0035.
+
+That comparison is the reason the warning band is a loose fixed interval rather
+than a standard-error rule. The slope is estimated several times more precisely
+than the correlation it is diagnosing, so at this sample size a departure from
+1 can be overwhelmingly significant and still immaterial: the linear margins
+above sit 2 to 6 standard errors from 1.0 while reproducing published
+correlations. A trigger keyed to significance would fire on essentially every
+real fit. A loose band asks whether the departure is gross, which is the only
+version worth interrupting a caller about.
+
 **Conclusion.** At d = 3 with moderate positive correlations, `"pairwise"`
 gives up about 1e-4 nats/row of held-out likelihood and saves two orders of
 magnitude of fitting time. That is a strong result for the composite objective,

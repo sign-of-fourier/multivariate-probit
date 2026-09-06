@@ -55,6 +55,27 @@ The number carries information only under cross-fitting, or for an inner model
 that is not itself a probit MLE. It is also computed unweighted, ignoring any
 `sample_weight` passed to `fit`.
 
+**Calibrating the margins is the caller's job.** Stage two holds the margins
+fixed and has no free parameter but the correlation, so error in `p̂` has
+nowhere to land except Σ. Nothing here repairs a probability, and calibration
+research and tooling live outside this package — scikit-learn's
+`CalibratedClassifierCV` is the usual instrument, and a reliability curve the
+usual diagnostic. Three notes specific to this estimator:
+
+- Prefer `method="sigmoid"`. It is scikit-learn's own recommendation below
+  roughly 1000 calibration samples, where isotonic is high-variance, and it
+  also avoids emitting exact 0s and 1s. Isotonic does emit them — about 1.8
+  percent of rows in a 5000-row check — and those become indices pinned at the
+  probability clip, so part of Σ ends up a function of an internal constant
+  rather than of the data.
+- Expect nested cross-validation. `CalibratedClassifierCV` cross-validates
+  internally and this estimator cross-fits on top, so the cost is `d` times
+  `cv` times the calibrator's own folds.
+- After calibrating, `calibration_` stops being an independent check on that
+  margin. Calibration optimises the calibration curve, and the slope measures
+  it, so it reads near 1 by construction — the same trap as the in-sample GLM
+  identity above.
+
 **Misspecified margins contaminate the dependence.** IFM's one-way information
 flow means anything the margins fail to explain surfaces in Σ, where it does
 not belong. Check the margins before interpreting the correlations.
@@ -102,6 +123,17 @@ likelihood at d ≥ 3. Until then the thin preset registry is the right shape.
 **Ordinal and count outcomes.** Binary only. The latent-threshold construction
 generalises to ordered categories with per-outcome cut points, but nothing in
 the current code does that.
+
+**Whether calibration improves Sigma is untested.** The argument for it is that
+calibration makes a margin honest with respect to the information its own score
+carries, which would convert estimation error ([Gap
+B](ifm.md#gap-b--a-real-bias), a bias) into omitted signal ([Gap
+A](ifm.md#gap-a--the-estimand-moves), a well-defined change of estimand) —
+`correlation_` would become interpretable rather than merely closer to
+something. That is an argument with an assumption in it, not a result: it
+requires the calibrator to be rich enough and genuinely out of fold. Nothing
+here measures it. The `rf` preset is the natural vehicle, since vote shares are
+the textbook uncalibrated probability and the preset is untested anyway.
 
 **Sparse input.** Dense arrays only; `X` is coerced with `numpy.asarray`.
 

@@ -122,6 +122,15 @@ The probability itself need not be any good. Inverting the link is exact for a
 calibrated `p̂`, and a miscalibrated one is reported by `calibration_` rather
 than repaired.
 
+`predict_proba` is an interface requirement, not a quality bar, and the gap
+between the two can be large. A fully grown `DecisionTreeClassifier` satisfies
+the contract and emits only exact 0s and 1s, so every index is pinned at the
+clip and Σ is fitted from thresholds that carry no information — on a synthetic
+bivariate probit with true ρ = 0.5 it returned 0.914, with calibration slopes
+of 0.11. The same tree at `min_samples_leaf=50` returned 0.362. Neither is
+right, and the contract cannot tell them apart; `calibration_` flagged the
+first and not the second.
+
 ### Presets
 
 | Name | Aliases | Estimator | Requires |

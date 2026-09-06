@@ -1,6 +1,8 @@
 # PLAN: contract enforcement and margin calibration diagnostics
 
-Internal working notes. Not user-facing documentation, and not yet implemented.
+Internal working notes. Not user-facing documentation. Implemented on the
+`margin-calibration` branch; the open questions below are settled in the
+commits, not here.
 
 Supersedes the previous plan ("latent-scale calibration and diagnostics")
 entirely. That plan's central proposal -- an affine `ProbitScaled` wrapper --
