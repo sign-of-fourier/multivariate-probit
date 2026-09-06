@@ -36,7 +36,7 @@ packages = ["src/multivariate_probit"]
 
 [tool.hatch.build.targets.sdist]
 # Internal working notes; not useful to a package consumer.
-exclude = ["CLAUDE.md"]
+exclude = ["CLAUDE.md", "PLAN.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

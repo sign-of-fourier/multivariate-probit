@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 
 import numpy as np
 from scipy.stats import norm
@@ -11,11 +12,17 @@ from ._corr import is_positive_definite
 from ._mvn import pattern_prob
 from .ifm import joint_correlation, pair_log_likelihood, pairwise_correlation
 from .inner import as_inner
+from .linear import ProbitRegressor
 from .results import MultivariateProbitProba
 
 __all__ = ["MultivariateProbit"]
 
 _LL_EPS = 1e-12
+
+# Slopes outside this band warn. Deliberately loose: the clinical literature
+# often flags below 0.8, which is noisier than is useful for a warning that
+# cannot be turned off per-outcome.
+_CALIBRATION_BAND = (0.5, 2.0)
 
 
 def _kfold_indices(n, n_splits, rng):
@@ -25,6 +32,24 @@ def _kfold_indices(n, n_splits, rng):
         mask = np.zeros(n, dtype=bool)
         mask[fold] = True
         yield ~mask, mask
+
+
+def _calibration_slope(eta, y):
+    """Intercept and slope of a probit of ``y`` on a single index ``eta``.
+
+    This is the *calibration slope* of prognostic-model validation (Cox): 1.0
+    means the index carries exactly the information its own scale claims.
+    Returns ``(nan, nan)`` for a degenerate input -- a constant or non-finite
+    index, or a single-class outcome -- where the slope is not identified.
+    """
+    eta = np.asarray(eta, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    if not np.all(np.isfinite(eta)) or np.ptp(eta) == 0.0:
+        return np.nan, np.nan
+    if np.unique(y).size < 2:
+        return np.nan, np.nan
+    fit = ProbitRegressor(fit_intercept=True).fit(eta[:, None], y)
+    return float(fit.intercept_), float(fit.coef_[0])
 
 
 def _require_positive_definite(corr):
@@ -127,6 +152,16 @@ class MultivariateProbit:
     correlation_ : ndarray of shape (d, d)
     eta_ : ndarray of shape (n, d)
         The (cross-fitted) latent indices stage two was fitted on.
+    calibration_ : ndarray of shape (d, 2)
+        Intercept and slope of a probit of each outcome on its own fitted
+        index -- the calibration slope, a diagnostic on the margins that
+        stage two consumed. A slope of 1 says the index is as informative as
+        its scale claims; below 1 means estimation error or an overconfident
+        classifier, and Sigma is attenuated; well above 1 means the index was
+        scored on rows it was fitted on. ``nan`` where the slope is not
+        identified. A slope near 1 does *not* license trusting Sigma -- see
+        ``docs/limitations.md``. Computed unweighted, ignoring
+        ``sample_weight``.
     nll_ : float
         Negative log-likelihood at the end of the dependence fit.
     n_outcomes_ : int
@@ -191,6 +226,7 @@ class MultivariateProbit:
         else:
             eta = self._oof_decision_function(X, Y, specs, params, sample_weight, rng)
         self.eta_ = eta
+        self.calibration_ = self._calibrate(eta, Y)
 
         # ---- stage 2: dependence
         if self.dependence == "joint":
@@ -223,6 +259,28 @@ class MultivariateProbit:
 
         _require_positive_definite(self.correlation_)
         return self
+
+    def _calibrate(self, eta, Y):
+        calibration = np.array(
+            [_calibration_slope(eta[:, j], Y[:, j]) for j in range(Y.shape[1])],
+            dtype=float,
+        ).reshape(-1, 2)
+
+        lo, hi = _CALIBRATION_BAND
+        slopes = calibration[:, 1]
+        off = np.flatnonzero(np.isfinite(slopes) & ((slopes < lo) | (slopes > hi)))
+        if off.size:
+            detail = ", ".join(f"outcome {j} slope {slopes[j]:.2f}" for j in off)
+            warnings.warn(
+                f"margin calibration is off ({detail}); expected roughly "
+                f"[{lo}, {hi}]. Below 1 the index is noisier than its scale "
+                "claims and correlation_ is attenuated; well above 1 the index "
+                "was scored on rows it was fitted on (raise cv, or set it if "
+                "cv=None). See calibration_.",
+                UserWarning,
+                stacklevel=3,
+            )
+        return calibration
 
     def _fit_margin(self, model, X, y, sample_weight):
         if sample_weight is not None and _supports_sample_weight(model):
