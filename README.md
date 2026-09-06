@@ -57,10 +57,12 @@ all; everything joint does.
 
 ## Everything here is a squashing function over a latent index
 
-The inner model never sees a probability, and never sees another outcome's
-labels. It produces an unbounded score η_j(x) on (-∞, ∞); Φ is the only
-squashing function applied to it. Any estimator that emits a real-valued score,
-or a probability that can be pushed back through Φ⁻¹, is a legal margin.
+The inner model never sees another outcome's labels. What stage two consumes is
+an unbounded index η_j(x) on (-∞, ∞); Φ is the only squashing function applied
+to it. A legal margin either produces that index directly, or emits a
+probability that is pushed back through Φ⁻¹ — a classifier with `predict_proba`.
+An uncalibrated `decision_function` score is not enough, since its scale is
+arbitrary.
 
 That is the whole abstraction, and it is why the inner model is swappable
 without touching the estimation code.
