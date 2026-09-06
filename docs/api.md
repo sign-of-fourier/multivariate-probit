@@ -89,14 +89,17 @@ one-liner.
 An inner model is anything with `fit(X, y)` and `latent(X) -> (n,)`, where
 `latent` returns a real-valued index on the probit scale.
 
-Estimators that do not expose `latent` are wrapped automatically by
-`ProbitCalibrated`, which supplies it:
+Estimators that do not expose `latent` must expose `predict_proba`, and are
+wrapped automatically by `ProbitCalibrated`, whose `latent(X)` is `Φ⁻¹(p̂)`
+clipped away from 0 and 1. Anything else is a `TypeError` at coercion, before
+any margin is fitted: an uncalibrated `decision_function` score is on an
+arbitrary scale, so `Φ` applied to it is not a probability and no diagnostic
+can detect the mismatch. Wrap such an estimator in a calibrator first
+(`CalibratedClassifierCV`, or `SVC(probability=True)`).
 
-- if the estimator has `predict_proba`, `latent(X)` is `Φ⁻¹(p̂)`, clipped away
-  from 0 and 1;
-- otherwise, if it has `decision_function`, that score is used as the index
-  as-is — which assumes it is already probit-scaled. Check that assumption
-  before relying on it.
+The probability itself need not be any good. Inverting the link is exact for a
+calibrated `p̂`, and a miscalibrated one is reported by `calibration_` rather
+than repaired.
 
 ### Presets
 

@@ -55,11 +55,6 @@ raising `cv`.
 **The `rf` preset is untested.** It is registered and it runs, but no test
 pins its behaviour. `linear` and `xgboost` are covered.
 
-**`decision_function` fallback.** When an inner model exposes neither `latent`
-nor `predict_proba`, its `decision_function` is used as the latent index
-directly, assuming it is already probit-scaled. Nothing verifies that
-assumption.
-
 ## Not implemented
 
 **FIML.** Full joint estimation is not supported, for the reasons in

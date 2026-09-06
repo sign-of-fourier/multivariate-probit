@@ -4,17 +4,23 @@ The multivariate probit here is a *squashing function around an arbitrary inner
 model*: each margin j owns a model that maps features to a real-valued index
 ``eta_j(x)`` on (-inf, inf), and the Gaussian CDF turns that index into a
 marginal probability. Nothing about the fit cares how ``eta_j`` was produced,
-so any estimator that can be coaxed into emitting a real-valued score is a
-legal inner model.
+so the inner model stays a black box.
 
-Two shapes are accepted:
+Two shapes are accepted, and nothing else:
 
 * Anything exposing ``fit(X, y)`` and ``latent(X) -> (n,)`` is used directly
   (:class:`~multivariate_probit.linear.ProbitRegressor` is the canonical one).
-* Any scikit-learn-style classifier is wrapped by :class:`ProbitCalibrated`,
-  which converts ``predict_proba`` back onto the probit scale with the probit
-  quantile function. Estimators offering only ``decision_function`` have that
-  score used as the index as-is.
+* Any classifier exposing ``fit(X, y)`` and ``predict_proba(X)`` is wrapped by
+  :class:`ProbitCalibrated`, whose ``latent`` inverts the link with the probit
+  quantile function.
+
+The probability is the contract. Inverting the link is exact for a calibrated
+``p_hat``, whatever produced it, so a classifier may be arbitrarily bad and
+still be a legal inner model -- ``MultivariateProbit.calibration_`` exists to
+report that. An estimator emitting only an uncalibrated score
+(``decision_function``) is not legal: its scale is arbitrary, ``Phi`` applied
+to it means nothing, and there is no way to detect the mismatch from the score
+alone. Wrap such an estimator in a calibrator first.
 
 The registry is deliberately thin. IFM has no per-family estimation logic --
 "linear", "xgboost" and "rf" differ only in which pre-wired estimator instance
@@ -41,11 +47,32 @@ __all__ = [
 _P_EPS = 1e-6
 
 
+def _no_proba_message(estimator):
+    name = type(estimator).__name__
+    extra = ""
+    if hasattr(estimator, "decision_function"):
+        extra = (
+            f" {name} exposes decision_function, but that score is on an arbitrary "
+            "scale, so Phi applied to it is not a probability and nothing can "
+            "detect the mismatch."
+        )
+    return (
+        f"{name} does not expose predict_proba, so it cannot serve as an inner "
+        f"model.{extra} Wrap it in a calibrator that does -- scikit-learn's "
+        "CalibratedClassifierCV, or SVC(probability=True) -- or give it a "
+        "latent(X) method already on the probit scale."
+    )
+
+
 class ProbitCalibrated:
     """Adapt a probability-emitting classifier to the latent probit scale.
 
     ``latent(X)`` returns ``Phi^-1(p_hat)``, clipped away from 0 and 1 so a
-    saturated tree ensemble cannot emit infinite indices.
+    saturated tree ensemble cannot emit infinite indices. This inverts the
+    link; it does not calibrate anything, and a miscalibrated ``p_hat`` gives a
+    miscalibrated index.
+
+    The wrapped estimator must expose ``predict_proba``.
     """
 
     def __init__(self, estimator, clip=_P_EPS):
@@ -63,12 +90,7 @@ class ProbitCalibrated:
             proba = np.asarray(est.predict_proba(X), dtype=float)
             p = proba[:, 1] if proba.ndim == 2 and proba.shape[1] == 2 else proba.ravel()
             return norm.ppf(np.clip(p, self.clip, 1.0 - self.clip))
-        if hasattr(est, "decision_function"):
-            return np.asarray(est.decision_function(X), dtype=float).ravel()
-        raise TypeError(
-            f"{type(est).__name__} exposes neither predict_proba nor decision_function; "
-            "it cannot serve as an inner model."
-        )
+        raise TypeError(_no_proba_message(est))
 
     def predict_proba(self, X):
         p = norm.cdf(self.latent(X))
@@ -172,6 +194,9 @@ def as_inner(spec, **kwargs):
     ``spec`` may be a preset name, a callable factory, or an estimator instance
     (which is deep-copied, then wrapped in :class:`ProbitCalibrated` unless it
     already exposes ``latent``).
+
+    An instance with neither ``latent`` nor ``predict_proba`` is rejected here,
+    so the failure arrives at coercion rather than midway through a fold.
     """
     if isinstance(spec, str):
         return make_inner(spec, **kwargs)
@@ -184,4 +209,6 @@ def as_inner(spec, **kwargs):
     est = copy.deepcopy(spec)
     if hasattr(est, "latent"):
         return est
+    if not hasattr(est, "predict_proba"):
+        raise TypeError(_no_proba_message(est))
     return ProbitCalibrated(est)
