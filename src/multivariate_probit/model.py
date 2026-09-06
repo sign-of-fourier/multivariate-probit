@@ -154,13 +154,17 @@ class MultivariateProbit:
         The (cross-fitted) latent indices stage two was fitted on.
     calibration_ : ndarray of shape (d, 2)
         Intercept and slope of a probit of each outcome on its own fitted
-        index -- the calibration slope, a diagnostic on the margins that
-        stage two consumed. A slope of 1 says the index is as informative as
-        its scale claims; below 1 means estimation error or an overconfident
-        classifier, and Sigma is attenuated; well above 1 means the index was
-        scored on rows it was fitted on. ``nan`` where the slope is not
-        identified. A slope near 1 does *not* license trusting Sigma -- see
-        ``docs/limitations.md``. Computed unweighted, ignoring
+        index: the Cox calibration slope, a scale check on the margins stage
+        two consumed. A slope near 1 is expected. It is deliberately simple
+        and is not a calibration assessment -- a slope of 1 rules out a
+        first-order scale error and nothing more, and a departure from 1 has
+        several possible causes (miscalibrated probabilities, a noisy index,
+        or an index scored on its own training rows). For an actual
+        assessment of a classifier's probabilities use a reliability curve;
+        for repair, calibrate the classifier before handing it over. A slope
+        near 1 does *not* license trusting Sigma, which is blind to omitted
+        signal by construction -- see ``docs/limitations.md``. ``nan`` where
+        the slope is not identified. Computed unweighted, ignoring
         ``sample_weight``.
     nll_ : float
         Negative log-likelihood at the end of the dependence fit.
@@ -272,11 +276,17 @@ class MultivariateProbit:
         if off.size:
             detail = ", ".join(f"outcome {j} slope {slopes[j]:.2f}" for j in off)
             warnings.warn(
-                f"margin calibration is off ({detail}); expected roughly "
-                f"[{lo}, {hi}]. Below 1 the index is noisier than its scale "
-                "claims and correlation_ is attenuated; well above 1 the index "
-                "was scored on rows it was fitted on (raise cv, or set it if "
-                "cv=None). See calibration_.",
+                f"margin calibration slope outside [{lo}, {hi}] ({detail}); a "
+                "slope near 1 is expected. This is the Cox calibration slope, a "
+                "deliberately simple scale check on the fitted indices -- not a "
+                "full calibration assessment, and not a sign the fit is invalid. "
+                "It suggests the margins' probabilities may be worth calibrating "
+                "(scikit-learn's CalibratedClassifierCV, for instance) before "
+                "reading correlation_ closely, since stage two has no free "
+                "parameter but the correlation to absorb margin error with. A "
+                "slope far above 1 usually means the index was scored on rows it "
+                "was fitted on, which cv= addresses. See calibration_ and "
+                "docs/limitations.md.",
                 UserWarning,
                 stacklevel=3,
             )

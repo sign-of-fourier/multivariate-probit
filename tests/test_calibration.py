@@ -126,7 +126,7 @@ def test_an_in_sample_flexible_margin_reads_far_above_one():
     pytest.importorskip("xgboost")
     X, Y = noisy_margin_data()
 
-    with pytest.warns(UserWarning, match="margin calibration is off"):
+    with pytest.warns(UserWarning, match="calibration slope outside"):
         model = MultivariateProbit(
             inner="xgboost",
             dependence="pairwise",

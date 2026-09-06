@@ -31,6 +31,16 @@ one that is over-dispersed but complete produce identical marginal data while
 implying different Σ. Widen the feature set if the structural quantity is what
 is wanted. See [Gap A](ifm.md#gap-a--the-estimand-moves).
 
+**`calibration_` is a scale check, not a calibration assessment.** It is the
+Cox calibration slope and nothing more: a slope of 1 rules out a first-order
+scale error, and says nothing about whether the classifier's probabilities are
+well calibrated in any fuller sense. It also cannot say *which* problem it has
+found — miscalibrated probabilities, a noisy index, and an index scored on its
+own training rows all move it. Checking probabilities properly means a
+reliability curve; repairing them means calibrating the classifier before it is
+handed over. Neither is this package's job. The [0.5, 2.0] warning band is a
+loose convenience with no calibrated error rate.
+
 **A quiet `calibration_` does not license trusting Σ.** The calibration slope
 detects estimation error in the margins, and is blind by construction to
 omitted signal — it reads exactly 1 while Σ moves a long way. It rules out one

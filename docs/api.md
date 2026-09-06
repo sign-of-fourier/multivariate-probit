@@ -31,15 +31,25 @@ MultivariateProbit(
 | `project_correlation` | `True` | Project a pairwise estimate onto the nearest positive-definite correlation matrix. No effect when `dependence="joint"`. |
 | `random_state` | `None` | Controls the cross-fitting split and `sample`. |
 
-> **Reading `calibration_`.** A slope of 1 says the index is as informative as
-> its scale claims. Below 1 means estimation error or an overconfident
-> classifier, and Σ is attenuated; well above 1 means the index was scored on
-> rows it was fitted on. Slopes outside roughly [0.5, 2.0] warn, and never
-> raise. A slope that is not identified — a constant or non-finite index, or a
-> single-class outcome — is `nan` and stays silent. A slope near 1 is *not*
-> evidence that Σ is trustworthy: the diagnostic is blind to omitted signal by
-> construction. See [ifm.md](ifm.md#the-calibration-slope-sees-exactly-one-of-them)
-> and [limitations.md](limitations.md).
+> **Reading `calibration_`.** This is the Cox calibration slope, a deliberately
+> simple scale check: a probit of each outcome on its own fitted index. A slope
+> near 1 is expected. It is *not* a calibration assessment — a slope of 1 rules
+> out a first-order scale error and nothing more, and a departure from 1 has
+> several possible causes: miscalibrated probabilities from the classifier, a
+> correctly calibrated but noisy index, or an index scored on the rows it was
+> fitted on. For a real assessment of a classifier's probabilities use a
+> reliability curve; calibrating the margins is the caller's job, not the
+> estimator's, and `CalibratedClassifierCV` is the usual way to do it.
+>
+> Slopes outside roughly [0.5, 2.0] emit a `UserWarning` and never raise. The
+> band is a loose convenience, not a test with a calibrated error rate — a
+> slope inside it is not a clean bill of health, and one outside it is a
+> suggestion to look, not a verdict on the fit. A slope that is not identified
+> — a constant or non-finite index, or a single-class outcome — is `nan` and
+> stays silent. A slope near 1 is not evidence that Σ is trustworthy: the check
+> is blind to omitted signal by construction. See
+> [ifm.md](ifm.md#the-calibration-slope-sees-exactly-one-of-them) and
+> [limitations.md](limitations.md).
 
 > **`cv=None` is not a neutral speed-up.** In-sample margins drive every fitted
 > correlation toward +1. It is defensible for the linear default and reckless
