@@ -15,6 +15,8 @@ score (attribute `eta_`). Σ is the latent correlation matrix — a *correlation
 matrix, with unit diagonal, not a covariance matrix (attribute
 `correlation_`). Φ and φ are the standard normal CDF and density; Φ_d is the
 d-variate normal CDF. `d` counts outcomes, `n` counts observations.
+[What Sigma is conditional on](#what-sigma-is-conditional-on) splits η_j into a
+fitted and an ideal version, and says so locally; nowhere else does.
 
 ## What IFM is
 
@@ -220,13 +222,137 @@ them distinct:
 - **Cross-fitted margins leave a residual downward bias.** An out-of-fold index
   still carries genuine prediction error, and noise in a regressor attenuates
   the correlation measured through it — classical errors-in-variables. In the
-  table, cross-fit estimates land at 0.376 and 0.340 against a true 0.6.
+  table, cross-fit estimates land at 0.376 and 0.340 against a true 0.6. The
+  algebra is in the next section, as Gap B.
 
 So cross-fitting trades a large upward bias for a smaller downward one. Treat a
 fitted correlation as a **floor** on the true dependence when the margins are
 only moderately predictive; the gap closes as the margins get sharper. Nothing
 in the estimator corrects for the second effect, and correcting it would
 require knowing the margins' prediction error on the latent scale.
+
+## What Sigma is conditional on
+
+Step 4 takes the fitted index as given and evaluates
+`P(Y_j = 1, Y_k = 1 | x) = Φ_2(η_j, η_k; ρ_jk)`. That is valid only if the
+index it is handed satisfies
+
+```
+P(Y_j = 1 | x) = Φ( η_j(x) )    for all x
+```
+
+Two distinct things separate the fitted index from the truth, and **they are
+not the same kind of defect**. Write η*_j for the index a fully specified model
+would use, η_j for the ideal index given only the features this model sees,
+
+```
+η_j(x) = Φ⁻¹( P(Y_j = 1 | x) )
+```
+
+and η̂_j for the one that was actually fitted. Elsewhere in this file η_j is
+the index the estimator works with — `eta_`, the fitted one. This section is
+the one place the three are separated, because the difference between them is
+the subject.
+
+### Gap A — the estimand moves
+
+The features and the functional form may omit determinants of the outcome.
+Projecting the full-information index onto the fitted one,
+
+```
+η*_j = c_j η_j + b_j + w_j,    w_j independent of η_j,   Var(w_j) = v_j
+```
+
+The omitted part w_j joins the latent error, so `w_j + e_j` has variance
+`1 + v_j`. Dividing through to restore the unit diagonal the model requires,
+the correlation stage two can recover is
+
+```
+ρ_recovered = [ ρ_jk + Cov(w_j, w_k) ] / sqrt( (1 + v_j) (1 + v_k) )
+```
+
+**This is not an estimation error.** A margin calibrated with respect to x
+satisfies the display above by construction, and Σ then measures dependence
+*conditional on x*, with the omitted shared variation correctly counted as part
+of it. That is a well-posed quantity, and often the one a caller wants. It is
+simply not the structural correlation of a fully specified model.
+
+The two terms pull opposite ways. `Cov(w_j, w_k) > 0` — margins missing the
+*same* thing — raises ρ_recovered, with no bound and no fixed sign in general;
+`v_j > 0` shrinks whatever the numerator is. Measured against known v on
+synthetic draws with independent omitted variables, so the covariance term
+vanishes and only the denominator acts, predicted `ρ / (1 + v)` against
+recovered gave 0.500/0.501, 0.400/0.386, 0.250/0.248 and 0.154/0.155.
+
+Nothing can correct this, and no diagnostic can detect it. The marginal law of
+(Y_j, η̂_j) depends on c_j and v_j only through `c_j / sqrt(1 + v_j)`: a margin
+that is correctly scaled but incomplete and one that is over-dispersed but
+complete produce identical marginal data while implying different Σ. The
+information is not in the data being fitted, at any level of flexibility.
+
+### Gap B — a real bias
+
+The fitted index also differs from the ideal one by finite-sample estimation
+error and by miscalibration of the classifier. This is **different algebra, not
+the same mechanism at a different stage**. Write
+
+```
+η̂_j = η_j + u_j,    Var(u_j) = τ_j²,   Var(η_j) = σ_j²
+```
+
+Here u_j is *part of* η̂_j — the estimator conditions on the noisy index rather
+than on a clean one perturbed afterwards — so this is classical measurement
+error, not the Berkson form of Gap A. The reliability ratio is
+
+```
+λ_j = σ_j² / (σ_j² + τ_j²)   < 1
+```
+
+with `E[η_j | η̂_j] = λ_j η̂_j + (1 - λ_j) m_j` and residual variance
+`λ_j τ_j²`. Substituting as before, and for estimation errors independent
+across margins,
+
+```
+ρ_recovered = ρ_jk / sqrt( (1 + λ_j τ_j²) (1 + λ_k τ_k²) )
+```
+
+This is a genuine downward bias — u_j is no part of the conditional estimand —
+and it is the residual attenuation the previous section describes. It is
+derivable rather than empirical.
+
+### The calibration slope sees exactly one of them
+
+After step 3 the cross-fitted η̂ and the labels are both in hand, so a
+probit of Y_j on η̂_j costs one one-dimensional fit per outcome and no extra
+inner-model fits. Its slope is the **calibration slope** of prognostic-model
+validation (Cox), reported as `calibration_`, and what it estimates is
+`λ / sqrt(1 + λ τ²)`. That is the reliability of the fitted index, which is
+precisely the quantity separating the two gaps:
+
+| | calibration slope | Σ |
+| --- | --- | --- |
+| Gap A (omitted signal) | exactly 1 | moves, legitimately |
+| Gap B (estimation error) | strictly below 1 | biased down |
+
+Two consequences follow, and both matter more than the number itself:
+
+- A quiet diagnostic is **not** evidence that Σ is trustworthy. It rules out
+  one of the two mechanisms, and not the one that moves Σ furthest. On the
+  synthetic Gap A draws above, the slope read 1.00 across v from 0 to 2.25
+  while ρ fell from 0.501 to 0.155.
+- A slope far *above* 1 is a third thing again: the index has absorbed the
+  noise of the rows it is being scored on, so the labels look more predictable
+  than the index admits. That is the memorisation signature cross-fitting
+  exists to remove — an over-capacity boosted margin reads 5.24 in-sample and
+  0.45 cross-fitted on the same data.
+
+Neither gap is corrected. Gap A cannot be, for the identifiability reason
+above. Gap B could be, since the slope estimates the very reliability that
+attenuates Σ — but the slope is itself estimated, dividing by it amplifies its
+error into Σ, and the result would be a point estimate with no standard error
+to say how far to trust it. Correcting one gap while the other stays silent
+would make `correlation_` harder to interpret, not easier. Report both, correct
+neither. See [limitations.md](limitations.md).
 
 ## Why not full joint MLE (FIML)
 
@@ -346,7 +472,19 @@ diverge from the full one.
 
 Note also what this study does *not* establish. Cross-fitting was used
 throughout, so these runs assume the case made above rather than retesting it;
-the in-sample bias measurement remains synthetic.
+the in-sample bias measurement remains synthetic. Nor does it validate Σ
+against a known truth — there is none here. It compares two objectives on
+identical margins.
+
+The correlations themselves should be read with their conditioning set in mind.
+The three outcomes are repayment delay for the **same client** in three
+different months, and the predictors are five demographics. Persistent
+unobserved creditworthiness is exactly a w shared across all three outcomes, so
+`Cov(w_j, w_k)` is large and positive by construction and much of the 0.51-0.68
+is that shared heterogeneity. That is what Σ conditional on demographics
+*means*, and it is why the independent tetrachoric fit agrees: it conditions on
+the same information. A model given repayment history would report smaller
+correlations without either fit being wrong.
 
 ## Computational cost
 

@@ -18,7 +18,32 @@ the large upward bias from in-sample margins, but leaves a residual downward
 bias: an out-of-fold index still carries prediction error, and noise in a
 regressor attenuates the correlation measured through it. Read a fitted
 correlation as a floor on the true dependence. See
-[ifm.md](ifm.md#two-bias-directions-at-two-different-stages).
+[ifm.md](ifm.md#two-bias-directions-at-two-different-stages) for the effect and
+[Gap B](ifm.md#gap-b--a-real-bias) for the algebra.
+
+**Σ is conditional on what the margins can see.** Determinants of the outcome
+that the features or the functional form omit do not vanish; they join the
+latent error, and shared omitted variation is counted as dependence. `Σ` is
+therefore the correlation conditional on x, not the structural correlation of a
+fully specified model. This is not a bias that better estimation removes, and
+it cannot be diagnosed: a margin that is correctly scaled but incomplete and
+one that is over-dispersed but complete produce identical marginal data while
+implying different Σ. Widen the feature set if the structural quantity is what
+is wanted. See [Gap A](ifm.md#gap-a--the-estimand-moves).
+
+**A quiet `calibration_` does not license trusting Σ.** The calibration slope
+detects estimation error in the margins, and is blind by construction to
+omitted signal — it reads exactly 1 while Σ moves a long way. It rules out one
+of the two mechanisms, and not the one that moves Σ furthest.
+
+**`calibration_` is uninformative for an in-sample GLM margin.** A probit
+margin fitted on the rows it is scored on satisfies `X'(y - p) = 0`, which
+contains `eta'(y - p) = 0` and `1'(y - p) = 0` — precisely the score equations
+of the calibrating probit at slope 1, intercept 0. So `cv=None` with the
+`linear` preset returns 1.00 to machine precision whatever the fit is worth.
+The number carries information only under cross-fitting, or for an inner model
+that is not itself a probit MLE. It is also computed unweighted, ignoring any
+`sample_weight` passed to `fit`.
 
 **Misspecified margins contaminate the dependence.** IFM's one-way information
 flow means anything the margins fail to explain surfaces in Σ, where it does

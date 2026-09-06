@@ -31,6 +31,16 @@ MultivariateProbit(
 | `project_correlation` | `True` | Project a pairwise estimate onto the nearest positive-definite correlation matrix. No effect when `dependence="joint"`. |
 | `random_state` | `None` | Controls the cross-fitting split and `sample`. |
 
+> **Reading `calibration_`.** A slope of 1 says the index is as informative as
+> its scale claims. Below 1 means estimation error or an overconfident
+> classifier, and Σ is attenuated; well above 1 means the index was scored on
+> rows it was fitted on. Slopes outside roughly [0.5, 2.0] warn, and never
+> raise. A slope that is not identified — a constant or non-finite index, or a
+> single-class outcome — is `nan` and stays silent. A slope near 1 is *not*
+> evidence that Σ is trustworthy: the diagnostic is blind to omitted signal by
+> construction. See [ifm.md](ifm.md#the-calibration-slope-sees-exactly-one-of-them)
+> and [limitations.md](limitations.md).
+
 > **`cv=None` is not a neutral speed-up.** In-sample margins drive every fitted
 > correlation toward +1. It is defensible for the linear default and reckless
 > for anything that can overfit. See
@@ -43,6 +53,7 @@ MultivariateProbit(
 | `inner_models_` | list, length d | The fitted margins, one per outcome. |
 | `correlation_` | (d, d) | The fitted Σ. |
 | `eta_` | (n, d) | The (cross-fitted) latent indices stage two was fitted on. |
+| `calibration_` | (d, 2) | Intercept and slope of a probit of each outcome on its own fitted index — the calibration slope. See the note below. |
 | `nll_` | float | Negative log-likelihood at the end of the dependence fit. Joint and pairwise fits optimise different objectives, so the values are not comparable across settings. |
 | `optimize_result_` | OptimizeResult or None | The SciPy result for `dependence="joint"`. |
 | `n_outcomes_`, `n_features_in_` | int | |

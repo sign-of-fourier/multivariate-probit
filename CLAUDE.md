@@ -13,7 +13,9 @@ src/multivariate_probit/
     ifm.py        stage 2: joint_correlation (full MLE), pairwise_correlation (composite)
     _mvn.py       bvn_cdf, mvn_orthant (Genz recursion), sign trick, signed_corr_stack
     _corr.py      Higham nearest-correlation projection
-tests/            test_linear.py, test_xgboost.py, conftest.py (adds src/ to path)
+tests/            test_linear.py, test_xgboost.py, test_calibration.py,
+                  test_contract.py, test_correlation_projection.py,
+                  conftest.py (adds src/ to path)
 docs/             ifm.md, implementation.md, api.md, limitations.md
 ```
 
@@ -21,7 +23,7 @@ docs/             ifm.md, implementation.md, api.md, limitations.md
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                  # ~17 tests, about 11s
+pytest -q                  # 38 tests, about 13s (3 warnings, all true positives)
 python -m pyflakes src tests
 ```
 
