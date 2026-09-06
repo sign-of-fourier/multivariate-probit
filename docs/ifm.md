@@ -177,9 +177,14 @@ Pairwise estimates carry no such constraint — each ρ_jk is fitted in isolatio
 so the assembled matrix can fail to be positive definite when d ≥ 3. It is
 projected onto the nearest correlation matrix by Higham's (2002) alternating
 projections, with a small eigenvalue floor so the result is strictly positive
-definite and safe to Cholesky-factor for sampling. In practice the projection
-is a no-op unless the pairwise estimates are genuinely contradictory or the
-sample is small.
+definite and safe to Cholesky-factor for sampling.
+
+How often this engages depends entirely on the data. On the UCI credit study it
+never did — Σ stayed well conditioned throughout. On multi-label benchmark data
+the smallest eigenvalue hit the floor in 11 of 12 fits, so the projection was
+doing real work almost every time
+([studies/mulan-multilabel.md](studies/mulan-multilabel.md)). Treat it as an
+active part of the estimator at larger d, not a formality.
 
 ## Why cross-fitting is required
 

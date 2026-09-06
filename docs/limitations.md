@@ -93,8 +93,16 @@ asymptotics are the composite ones, not the full-likelihood ones.
 **Outcome count.** The deterministic orthant evaluator costs roughly
 `n_quad ** (d - 2)`. Trivial at d = 3, noticeably heavier by d = 6-7,
 impractical well before d = 10. That regime needs a randomized or QMC
-evaluator, which is not implemented. `dependence="pairwise"` is the escape
-hatch and has no such scaling.
+evaluator, which is not implemented. There is no fallback: `scipy`'s
+multivariate normal CDF is stochastic and takes a single matrix, while the sign
+trick needs a per-row correlation stack, so it cannot stand in.
+
+`dependence="pairwise"` is the escape hatch for *fitting* and has no such
+scaling — but it does not help with *evaluation*. Fitting d = 14 works; asking
+the resulting model for a joint probability does not, at any quadrature order.
+`predict_proba(X).marginal`, `decision_function` and `correlation_` remain
+available there; `joint_proba`, `.all()`, `.any()`, `.none()`, `score` and
+`sample` effectively do not.
 
 **No analytic gradient for the Σ MLE.** `dependence="joint"` is derivative-free
 (Nelder-Mead) only. A closed-form gradient with respect to the correlation
