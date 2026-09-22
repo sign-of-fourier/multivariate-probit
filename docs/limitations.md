@@ -10,7 +10,11 @@ later.
 conditions on estimated margins, inverse-Hessian standard errors would be
 wrong; correct inference needs a Godambe (sandwich) information matrix or a
 bootstrap that resamples and refits both stages. Neither is implemented, and
-the margin fit does not report coefficient standard errors either. See
+the margin fit does not report coefficient standard errors either. The
+published treatment of this exact estimator says the same — see the two-stage
+composite likelihood entry in
+[studies/README.md](studies/README.md#external-references) — so the gap is a
+matter of implementation rather than of open methodology. See
 [ifm.md](ifm.md#inference).
 
 **Correlations are attenuated when margins are noisy.** Cross-fitting removes

@@ -405,6 +405,16 @@ and rejected, each variant for a specific, empirically confirmed reason:
   raw-Y and the correct value, since removing a genuinely positive
   shared-predictor contribution pulls the number down further.
 
+- **Rank-transforming the predicted probabilities first** — empirical CDF per
+  margin, then Φ⁻¹, then Pearson. This is a monotone reparameterisation of the
+  first bullet and inherits its verdict: measured against arm (b) on the same
+  cross-fitted indices, the rank step moves the answer by 0.003 on average and
+  never more than 0.011. What the number tracks is the overlap between the
+  margins' predictors, not ρ. On synthetic draws with a true ρ of 0 and 60%
+  shared index variance it returns 0.58; with a true ρ of 0.5 and disjoint
+  predictors it returns 0.02
+  ([studies/index-correlation-shortcut.md](studies/index-correlation-shortcut.md)).
+
 All three are linear correlation measures applied to a relationship that is
 nonlinear by construction (a threshold on a latent Gaussian). Only the
 maximum-likelihood approach above, working through Φ, correctly inverts that

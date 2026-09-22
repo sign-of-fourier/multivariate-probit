@@ -79,7 +79,12 @@ restricted to non-empty rows is identical to the figure above.
 
 **Subset accuracy improved with Σ in 12 of 12 configurations**, across every
 margin and both d = 6 datasets. It is the most robust finding here, and it holds
-even where the joint likelihood says Σ is harmful.
+even where the joint likelihood says Σ is harmful. Read it alongside
+[multilabel-benchmarks.md](multilabel-benchmarks.md), which puts the same
+estimator against methods that model dependence rather than ignore it: binary
+relevance is the floor, and ensemble classifier chains beat the probit on this
+metric at d = 6. The result below stands as stated; it is a comparison against
+*no* dependence model, not against a competing one.
 
 **Σ can hurt.** Scene at `alpha=1e-6` loses 0.861 nats/row against independence.
 The margin has no out-of-fold signal (median slope 0.00), ρ pegs at +1.000, and

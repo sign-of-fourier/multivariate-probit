@@ -16,3 +16,11 @@ venv/
 
 # Local data, not redistributed
 UCI/
+
+# Third-party binary, not redistributable
+*.so
+
+# Local agent notes, never part of the repo
+CLAUDE.md
+CLAUDE.local.md
+PLAN.md
