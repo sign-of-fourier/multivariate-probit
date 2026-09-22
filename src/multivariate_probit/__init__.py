@@ -33,7 +33,7 @@ from .linear import ProbitRegressor
 from .model import MultivariateProbit
 from .results import MultivariateProbitProba
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "MultivariateProbit",
