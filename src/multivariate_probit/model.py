@@ -11,7 +11,7 @@ from scipy.stats import norm
 from ._corr import is_positive_definite
 from ._mvn import pattern_prob
 from .ifm import joint_correlation, pair_log_likelihood, pairwise_correlation
-from .inner import as_inner
+from .inner import ProbitCalibrated, as_inner
 from .linear import ProbitRegressor
 from .results import MultivariateProbitProba
 
@@ -75,6 +75,10 @@ def _require_positive_definite(corr):
 
 
 def _supports_sample_weight(estimator):
+    # The wrapper always accepts weights; whether they mean anything depends on
+    # what it wraps.
+    if isinstance(estimator, ProbitCalibrated):
+        estimator = estimator.estimator
     try:
         return "sample_weight" in inspect.signature(estimator.fit).parameters
     except (TypeError, ValueError):  # pragma: no cover - exotic callables
@@ -293,9 +297,16 @@ class MultivariateProbit:
         return calibration
 
     def _fit_margin(self, model, X, y, sample_weight):
-        if sample_weight is not None and _supports_sample_weight(model):
+        if sample_weight is None:
+            model.fit(X, y)
+        elif _supports_sample_weight(model):
             model.fit(X, y, sample_weight=sample_weight)
         else:
+            warnings.warn(
+                f"{model!r} does not accept sample_weight, so this margin is fitted "
+                "unweighted; the correlation stage still uses the weights.",
+                stacklevel=3,
+            )
             model.fit(X, y)
         return model
 

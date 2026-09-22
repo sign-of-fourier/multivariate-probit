@@ -79,9 +79,12 @@ class ProbitCalibrated:
         self.estimator = estimator
         self.clip = clip
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         self.estimator_ = copy.deepcopy(self.estimator)
-        self.estimator_.fit(X, y)
+        if sample_weight is None:
+            self.estimator_.fit(X, y)
+        else:
+            self.estimator_.fit(X, y, sample_weight=sample_weight)
         return self
 
     def latent(self, X):

@@ -164,3 +164,12 @@ def test_input_validation():
     model = MultivariateProbit(dependence="pairwise", cv=None).fit(X, Y)
     with pytest.raises(ValueError):
         model.predict_proba(X[:, :1])
+
+
+def test_integer_weights_match_duplicated_rows():
+    X, Y = make_data(n=2000, seed=6)
+    counts = np.random.default_rng(6).integers(1, 4, size=len(X))
+    weighted = ProbitRegressor().fit(X, Y[:, 0], sample_weight=counts)
+    duplicated = ProbitRegressor().fit(np.repeat(X, counts, axis=0), np.repeat(Y[:, 0], counts))
+    np.testing.assert_allclose(weighted.coef_, duplicated.coef_, atol=1e-8)
+    assert weighted.intercept_ == pytest.approx(duplicated.intercept_, abs=1e-8)

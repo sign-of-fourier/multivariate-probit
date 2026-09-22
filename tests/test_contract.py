@@ -33,6 +33,12 @@ class ProbaOnly:
         return np.column_stack([1.0 - p, p])
 
 
+class WeightedProba(ProbaOnly):
+    def fit(self, X, y, sample_weight=None):
+        self.sample_weight_ = sample_weight
+        return super().fit(X, y)
+
+
 class Opaque:
     def fit(self, X, y):
         return self
@@ -95,3 +101,21 @@ def test_svc_is_accepted_only_with_probability_estimates():
         as_inner(SVC(probability=False))
 
     assert isinstance(as_inner(SVC(probability=True)), ProbitCalibrated)
+
+
+def test_probit_calibrated_forwards_sample_weight():
+    X = np.random.default_rng(0).normal(size=(40, 2))
+    y = (X[:, 0] > 0).astype(int)
+    w = np.linspace(0.5, 2.0, 40)
+    model = MultivariateProbit(inner=WeightedProba(), dependence="pairwise", cv=None)
+    model.fit(X, np.column_stack([y, 1 - y]), sample_weight=w)
+    for inner in model.inner_models_:
+        np.testing.assert_array_equal(inner.estimator_.sample_weight_, w)
+
+
+def test_a_margin_that_cannot_take_weights_warns():
+    X = np.random.default_rng(0).normal(size=(40, 2))
+    y = (X[:, 0] > 0).astype(int)
+    model = MultivariateProbit(inner=ProbaOnly(), dependence="pairwise", cv=None)
+    with pytest.warns(UserWarning, match="does not accept sample_weight"):
+        model.fit(X, np.column_stack([y, 1 - y]), sample_weight=np.ones(40))

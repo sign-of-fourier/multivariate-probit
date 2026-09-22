@@ -72,7 +72,7 @@ MultivariateProbit(
 
 | Method | Returns | Notes |
 | --- | --- | --- |
-| `fit(X, Y, sample_weight=None)` | self | `Y` is (n, d) and strictly 0/1. Weights are forwarded to margins that accept them. |
+| `fit(X, Y, sample_weight=None)` | self | `Y` is (n, d) and strictly 0/1. Weights are forwarded to every margin, including the wrapped estimator inside `ProbitCalibrated`; a margin whose `fit` takes no `sample_weight` is fitted unweighted with a warning. |
 | `decision_function(X)` / `transform(X)` | (n, d) | Latent indices η on (-∞, ∞). |
 | `fit_transform(X, Y)` | (n, d) | |
 | `predict_proba(X)` | `MultivariateProbitProba` | See below. |
