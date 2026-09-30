@@ -141,10 +141,10 @@ rows in 917, and the Σ-over-independence gain is +0.0454 by sampling against
 +0.0426 by enumeration. Nothing in the benchmark table needs revising.
 
 **The modal probability does not.** Under independence the two instruments
-agree to 1 percent. Under a general Σ the approximate evaluator reads 23
-percent low, at roughly 40 standard deviations of the sampling noise. This is
-the same sign and rough magnitude as the log-score result above, where it read
-the median observed-pattern probability 32 percent low against SciPy — two
+agree to within 0.0005. Under a general Σ the approximate evaluator reads
+0.027 low, at roughly 40 standard deviations of the sampling noise. This is
+the same sign as the log-score result above, where it read
+the median observed-pattern probability 0.006 low against SciPy — two
 different quantities, two independent references, one direction.
 
 The obvious alternative explanation is a winner's curse: taking the maximum of
@@ -198,7 +198,7 @@ the tail out of reach.
 
 - **The downward shift is corroborated and still unexplained.** Two references
   now agree that the approximate route reads low on a general Σ at `d = 14` —
-  32 percent on the observed pattern, 23 percent on the modal one — and that it
+  by 0.006 on the observed pattern and 0.027 on the modal one — and that it
   does not on Σ = I. Whether that is a property of the instrument, of
   near-singular Σ, or of the dimension is not established, and a bias with a
   known sign could in principle be corrected. Characterising it against a

@@ -24,7 +24,8 @@ and what is still open. Datasets are never committed.
 | [multilabel-benchmarks.md](multilabel-benchmarks.md) | Does modelling Σ beat the standard multi-label methods? | no on subset accuracy; ensemble chains lead at d = 6 |
 | [sparse-label-transfer.md](sparse-label-transfer.md) | Can a well-populated outcome carry a sparsely observed one through Σ? | conditioning helps, but the gain shrinks with the label; a shared-representation MLP overtakes it |
 | [index-correlation-shortcut.md](index-correlation-shortcut.md) | Can Σ be read off the marginal predictions, skipping stage two? | no; the shortcut tracks predictor overlap, not ρ |
-| [log-score-evaluator.md](log-score-evaluator.md) | What does the approximate evaluator cost at d = 14? | no ranking or subset-accuracy change, but it reads 23-32% low on a general Σ; unusable for a mean |
+| [log-score-evaluator.md](log-score-evaluator.md) | What does the approximate evaluator cost at d = 14? | no ranking or subset-accuracy change, but it reads low on a general Σ (0.006 on the median observed pattern, 0.027 on the modal one); unusable for a mean |
+| [comparators.md](comparators.md) | What do joint, pairwise, statsmodels and the orthant .so trade in accuracy and speed? | statsmodels biased on joint queries; pairwise matches joint at ~1/3000 the fit time; the .so is accurate only off the PSD boundary; SciPy's cost tracks p, not d |
 
 ## External references
 
