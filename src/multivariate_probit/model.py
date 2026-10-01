@@ -146,7 +146,7 @@ class MultivariateProbit:
         - ``"scipy"``: ``scipy.stats.multivariate_normal.cdf``, randomised
           quasi-Monte Carlo, one row at a time. Slow per row and not
           deterministic, but reaches any ``d``.
-        - ``"orthant"``: the optional compiled package (CPython 3.12, x86-64
+        - ``"orthant"``: the optional compiled package (CPython 3.11/3.12, x86-64
           Linux; ``pip install multivariate-probit[orthant]``). Without a key
           it accepts ``d <= 3`` and ``resolution="low"`` only; outside that,
           and on any platform it was not built for, it raises.

@@ -72,7 +72,7 @@ queries on a pairwise fit still use the chosen backend.
 | --- | --- | --- |
 | `"quadrature"` | Genz's recursive conditioning with a fixed Gauss-Legendre rule of order `n_quad` (see [implementation.md](implementation.md)). | Deterministic and accurate. Cost grows as `n_quad ** (d - 2)`, so it becomes impractical well before d = 10. |
 | `"scipy"` | `scipy.stats.multivariate_normal.cdf`, one row at a time. | Reaches any d, but is slow per row and randomised: a `dependence="joint"` fit is not exactly reproducible, and its noisy objective can stall the simplex. |
-| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. |
+| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.11 and 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. |
 
 ### Attributes
 

@@ -11,6 +11,7 @@ The key is read from ``$ORTHANT_KEY`` or ``~/.orthant/key``.  Get one at
 https://quantecarlo.com/orthant_key
 """
 import glob
+import importlib.machinery
 import importlib.util
 import os
 import struct
@@ -73,12 +74,28 @@ def _import_extension(data, modname):
             pass
 
 
-def _decrypt_paid(passphrase):
+def _tag():
+    """Extension tag of the first shipped binary this interpreter can load,
+    e.g. "cpython-311-x86_64-linux-gnu"."""
+    for suffix in importlib.machinery.EXTENSION_SUFFIXES:
+        if suffix.count(".") == 2 and suffix.endswith(".so"):
+            tag = suffix[1:-3]
+            if os.path.exists(os.path.join(_DIR, "_ofree.%s.so" % tag)):
+                return tag
+    shipped = sorted(os.path.basename(p)[len("_ofree."):-len(".so")]
+                     for p in glob.glob(os.path.join(_DIR, "_ofree.*.so")))
+    raise ImportError(
+        "orthant: no binary for Python %d.%d on this platform; shipped: %s"
+        % (sys.version_info[0], sys.version_info[1],
+           ", ".join(shipped) or "none"))
+
+
+def _decrypt_paid(passphrase, tag):
     """Return the decrypted paid binary bytes, or raise on a bad key/blob."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-    with open(os.path.join(_DIR, "_paid.enc"), "rb") as f:
+    with open(os.path.join(_DIR, "_paid.%s.enc" % tag), "rb") as f:
         blob = f.read()
     if blob[:4] != _MAGIC:
         raise ValueError("paid blob: bad magic")
@@ -91,12 +108,9 @@ def _decrypt_paid(passphrase):
     return AESGCM(key).decrypt(nonce, ct, None)  # raises InvalidTag on wrong key
 
 
-def _load_free():
-    matches = glob.glob(os.path.join(_DIR, "_ofree.*.so"))
-    if not matches:
-        raise ImportError("orthant: free binary missing from package")
+def _load_free(tag):
     spec = importlib.util.spec_from_file_location(
-        __name__ + "._ofree", matches[0])
+        __name__ + "._ofree", os.path.join(_DIR, "_ofree.%s.so" % tag))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -112,10 +126,11 @@ def _warn(msg):
 
 def _bind():
     """Pick a binary, bind cdf, and return the tier."""
+    tag = _tag()
     key = _read_key()
     if key is not None:
         try:
-            mod = _import_extension(_decrypt_paid(key), "_ocore")
+            mod = _import_extension(_decrypt_paid(key, tag), "_ocore")
         except ImportError as e:
             # Not a key problem: a missing dependency or a binary that won't
             # load on this platform.  Say so rather than blaming the key.
@@ -136,7 +151,7 @@ def _bind():
                   "         For full accuracy and higher dimensions, get a "
                   "key: %s\n" % _URL)
 
-    globals()["cdf"] = _load_free().cdf
+    globals()["cdf"] = _load_free(tag).cdf
     _warn(notice)
     return "free"
 

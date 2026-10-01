@@ -5,7 +5,7 @@ decides its tier once, at import, from ``$ORTHANT_KEY`` or ``~/.orthant/key``,
 so its tests run in a subprocess with a controlled environment.
 """
 
-import glob
+import importlib.machinery
 import os
 import platform
 import subprocess
@@ -25,10 +25,12 @@ orthant_built = pytest.mark.skipif(
     not (
         sys.platform.startswith("linux")
         and platform.machine() == "x86_64"
-        and sys.version_info[:2] == (3, 12)
-        and glob.glob(str(ORTHANT_DIR / "_ofree.*.so"))
+        and any(
+            (ORTHANT_DIR / ("_ofree" + suffix)).exists()
+            for suffix in importlib.machinery.EXTENSION_SUFFIXES
+        )
     ),
-    reason="the compiled orthant package is built for CPython 3.12 on x86-64 Linux",
+    reason="no compiled orthant binary for this interpreter",
 )
 
 CORR3 = np.array([[1.0, 0.4, 0.2], [0.4, 1.0, -0.3], [0.2, -0.3, 1.0]])

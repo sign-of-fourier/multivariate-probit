@@ -108,9 +108,9 @@ fit at large d (`joint_proba`, `.all()`, `.any()`, `.none()`, `score`) still go
 through the chosen evaluator and pay its price. `predict_proba(X).marginal`,
 `decision_function`, `correlation_` and `sample` need no orthant integral.
 
-**`evaluator="orthant"` is one platform only.** The compiled package is built
-for CPython 3.12 on x86-64 Linux. Every other platform and Python version gets
-an `ImportError` when it is selected. Without a key it is limited to d ≤ 3 at
+**`evaluator="orthant"` is narrowly built.** The compiled package is built
+for CPython 3.11 and 3.12 on x86-64 Linux. Every other platform and Python
+version gets an `ImportError` when it is selected. Without a key it is limited to d ≤ 3 at
 `resolution="low"`. It never falls back to another evaluator.
 
 **No analytic gradient for the Σ MLE.** `dependence="joint"` is derivative-free

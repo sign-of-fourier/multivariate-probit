@@ -142,8 +142,8 @@ def _compiled_orthant(A, corr_stack, resolution):
     except ImportError as exc:
         raise ImportError(
             "evaluator='orthant' is unavailable: the compiled orthant package "
-            "could not be loaded on this platform (it is built for CPython 3.12 "
-            f"on x86-64 Linux). Choose 'quadrature' or 'scipy'. Cause: {exc}"
+            "could not be loaded on this platform (it is built for CPython 3.11 "
+            f"and 3.12 on x86-64 Linux). Choose 'quadrature' or 'scipy'. Cause: {exc}"
         ) from exc
     stack = np.ascontiguousarray(np.moveaxis(corr_stack, 2, 0))
     try:
