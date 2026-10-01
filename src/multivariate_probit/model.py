@@ -9,7 +9,7 @@ import numpy as np
 from scipy.stats import norm
 
 from ._corr import is_positive_definite
-from ._mvn import pattern_prob
+from ._mvn import EVALUATORS, pattern_prob
 from .ifm import joint_correlation, pair_log_likelihood, pairwise_correlation
 from .inner import ProbitCalibrated, as_inner
 from .linear import ProbitRegressor
@@ -136,9 +136,29 @@ class MultivariateProbit:
         absorbed part of the noise, which attenuates the estimated
         correlations toward zero. ``None`` skips cross-fitting -- reasonable
         for the linear default, risky for anything that can overfit.
+    evaluator : {"quadrature", "scipy", "orthant"}, default="quadrature"
+        Backend for the orthant probabilities behind ``dependence="joint"``
+        and every joint query. The speed/accuracy trade-off is the caller's:
+
+        - ``"quadrature"``: Genz's recursive conditioning with a fixed
+          Gauss-Legendre rule. Deterministic and accurate; cost grows as
+          ``n_quad ** (d - 2)``.
+        - ``"scipy"``: ``scipy.stats.multivariate_normal.cdf``, randomised
+          quasi-Monte Carlo, one row at a time. Slow per row and not
+          deterministic, but reaches any ``d``.
+        - ``"orthant"``: the optional compiled package (CPython 3.12, x86-64
+          Linux; ``pip install multivariate-probit[orthant]``). Without a key
+          it accepts ``d <= 3`` and ``resolution="low"`` only; outside that,
+          and on any platform it was not built for, it raises.
+
+        Results are clipped to [0, 1]. No backend ever falls back to another.
+        ``dependence="pairwise"`` needs only bivariate probabilities, which
+        are always computed in closed form, so it ignores this setting.
     n_quad : int, default=24
-        Gauss-Legendre order for the orthant-probability evaluator. Lower it
-        if fitting with many outcomes gets slow.
+        Gauss-Legendre order for ``evaluator="quadrature"``. Lower it if
+        fitting with many outcomes gets slow.
+    resolution : {"high", "low"}, default="high"
+        Passed to ``evaluator="orthant"``; ignored otherwise.
     optimizer : str, default="Nelder-Mead"
         Passed to ``scipy.optimize.minimize`` for ``dependence="joint"``.
         Derivative-free by design: the orthant likelihood has no convenient
@@ -186,12 +206,16 @@ class MultivariateProbit:
         optimizer="Nelder-Mead",
         project_correlation=True,
         random_state=None,
+        evaluator="quadrature",
+        resolution="high",
     ):
         self.inner = inner
         self.inner_params = inner_params
         self.dependence = dependence
         self.cv = cv
+        self.evaluator = evaluator
         self.n_quad = n_quad
+        self.resolution = resolution
         self.optimizer = optimizer
         self.project_correlation = project_correlation
         self.random_state = random_state
@@ -209,6 +233,8 @@ class MultivariateProbit:
             raise ValueError(f"X has {X.shape[0]} rows but Y has {Y.shape[0]}")
         if not np.isin(np.unique(Y), (0, 1)).all():
             raise ValueError("Y must contain only 0/1 values")
+        if self.evaluator not in EVALUATORS:
+            raise ValueError(f"evaluator must be one of {EVALUATORS}; got {self.evaluator!r}")
         Y = Y.astype(float)
 
         n, d = Y.shape
@@ -244,6 +270,8 @@ class MultivariateProbit:
                 weights=sample_weight,
                 n_quad=self.n_quad,
                 optimizer=self.optimizer,
+                evaluator=self.evaluator,
+                resolution=self.resolution,
             )
             self.nll_ = None if self.optimize_result_ is None else float(self.optimize_result_.fun)
         elif self.dependence == "pairwise":
@@ -363,7 +391,11 @@ class MultivariateProbit:
         ``.none()``.
         """
         return MultivariateProbitProba(
-            self.decision_function(X), self.correlation_, n_quad=self.n_quad
+            self.decision_function(X),
+            self.correlation_,
+            n_quad=self.n_quad,
+            evaluator=self.evaluator,
+            resolution=self.resolution,
         )
 
     def predict_marginal_proba(self, X):
@@ -388,7 +420,14 @@ class MultivariateProbit:
         Y = np.asarray(Y, dtype=float)
         if Y.ndim == 1:
             Y = Y[None, :]
-        return pattern_prob(eta, Y, self.correlation_, n_quad=self.n_quad)
+        return pattern_prob(
+            eta,
+            Y,
+            self.correlation_,
+            n_quad=self.n_quad,
+            evaluator=self.evaluator,
+            resolution=self.resolution,
+        )
 
     def joint_log_proba(self, X, Y):
         return np.log(np.clip(self.joint_proba(X, Y), _LL_EPS, None))
@@ -423,7 +462,9 @@ class MultivariateProbit:
             "inner_params": self.inner_params,
             "dependence": self.dependence,
             "cv": self.cv,
+            "evaluator": self.evaluator,
             "n_quad": self.n_quad,
+            "resolution": self.resolution,
             "optimizer": self.optimizer,
             "project_correlation": self.project_correlation,
             "random_state": self.random_state,

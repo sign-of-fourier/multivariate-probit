@@ -15,6 +15,8 @@ MultivariateProbit(
     optimizer="Nelder-Mead",
     project_correlation=True,
     random_state=None,
+    evaluator="quadrature",
+    resolution="high",
 )
 ```
 
@@ -26,10 +28,12 @@ MultivariateProbit(
 | `inner_params` | `None` | Keyword arguments forwarded to the preset factory. Ignored when `inner` is already an instance. |
 | `dependence` | `"joint"` | `"joint"` maximises the full d-variate likelihood for Σ; `"pairwise"` maximises each pair's bivariate likelihood (composite likelihood, far cheaper). |
 | `cv` | `5` | Folds used to cross-fit the latent indices that stage two consumes. `None` skips cross-fitting — see the warning below. |
-| `n_quad` | `24` | Gauss-Legendre order for the orthant evaluator. Lower it if fitting with many outcomes gets slow. |
+| `n_quad` | `24` | Gauss-Legendre order for `evaluator="quadrature"`. Lower it if fitting with many outcomes gets slow. |
 | `optimizer` | `"Nelder-Mead"` | Passed to `scipy.optimize.minimize` for `dependence="joint"`. Derivative-free by design. |
 | `project_correlation` | `True` | Project a pairwise estimate onto the nearest positive-definite correlation matrix. No effect when `dependence="joint"`. |
 | `random_state` | `None` | Controls the cross-fitting split and `sample`. |
+| `evaluator` | `"quadrature"` | Backend for the orthant probabilities behind `dependence="joint"` and every joint query: `"quadrature"`, `"scipy"` or `"orthant"`. See [Evaluators](#evaluators). |
+| `resolution` | `"high"` | Passed to `evaluator="orthant"`; ignored otherwise. |
 
 > **Reading `calibration_`.** This is the Cox calibration slope, a deliberately
 > simple scale check: a probit of each outcome on its own fitted index. A slope
@@ -55,6 +59,20 @@ MultivariateProbit(
 > correlation toward +1. It is defensible for the linear default and reckless
 > for anything that can overfit. See
 > [ifm.md](ifm.md#why-cross-fitting-is-required).
+
+### Evaluators
+
+The speed/accuracy trade-off is the caller's. None of the backends falls back to
+another: one that cannot run as asked raises. All results are clipped to
+[0, 1]. `dependence="pairwise"` needs only bivariate probabilities, which are
+always computed in closed form, so it is unaffected during fitting; joint
+queries on a pairwise fit still use the chosen backend.
+
+| `evaluator` | What it is | Trade-off |
+| --- | --- | --- |
+| `"quadrature"` | Genz's recursive conditioning with a fixed Gauss-Legendre rule of order `n_quad` (see [implementation.md](implementation.md)). | Deterministic and accurate. Cost grows as `n_quad ** (d - 2)`, so it becomes impractical well before d = 10. |
+| `"scipy"` | `scipy.stats.multivariate_normal.cdf`, one row at a time. | Reaches any d, but is slow per row and randomised: a `dependence="joint"` fit is not exactly reproducible, and its noisy objective can stall the simplex. |
+| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. |
 
 ### Attributes
 

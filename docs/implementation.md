@@ -46,7 +46,8 @@ Drezner-Wesolowsky form of Plackett's identity, and Φ_d for d ≥ 3 by Genz's
 recursive conditioning down onto it. Both are vectorised over observations and
 accept a `(d, d, n)` stack so the correlation matrix may vary by row.
 
-`scipy.stats.multivariate_normal.cdf` was deliberately not used:
+`scipy.stats.multivariate_normal.cdf` is not the default, though it can be
+selected with `evaluator="scipy"` (see [api.md](api.md#evaluators)):
 
 - It is quasi-Monte-Carlo, so it is **stochastic**. Noise inside an optimizer
   objective is corrosive — Nelder-Mead cannot distinguish a genuine likelihood
@@ -56,8 +57,9 @@ accept a `(d, d, n)` stack so the correlation matrix may vary by row.
 - It is about **1e-5** accurate where the closed-form bivariate case reaches
   about 1e-12.
 
-SciPy's version does appear in the test suite, as an independent cross-check of
-the hand-rolled evaluator.
+Selecting it is the caller's speed/accuracy decision; it is the only route to
+joint probabilities once d is too large for quadrature. It also appears in the
+test suite, as an independent cross-check of the hand-rolled evaluator.
 
 ### Cross-fitting
 
@@ -78,6 +80,7 @@ Optimizers and primitives only:
 
 - `scipy.optimize.minimize` (Nelder-Mead) — the joint Σ fit
 - `scipy.optimize.minimize_scalar` (bounded Brent) — each pairwise ρ
+- `scipy.stats.multivariate_normal.cdf` — Φ_d, only with `evaluator="scipy"`
 - `scipy.stats.norm` — Φ, φ, Φ⁻¹
 - `numpy.polynomial.legendre.leggauss` — quadrature nodes and weights
 - `numpy.linalg` — `solve`, `eigh`, `cholesky`

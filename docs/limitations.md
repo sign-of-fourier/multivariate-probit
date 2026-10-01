@@ -94,19 +94,24 @@ asymptotics are the composite ones, not the full-likelihood ones.
 
 ## Computational
 
-**Outcome count.** The deterministic orthant evaluator costs roughly
+**Outcome count.** The default `evaluator="quadrature"` costs roughly
 `n_quad ** (d - 2)`. Trivial at d = 3, noticeably heavier by d = 6-7,
-impractical well before d = 10. That regime needs a randomized or QMC
-evaluator, which is not implemented. There is no fallback: `scipy`'s
-multivariate normal CDF is stochastic and takes a single matrix, while the sign
-trick needs a per-row correlation stack, so it cannot stand in.
+impractical well before d = 10. Past that, `evaluator="scipy"` reaches any d by
+evaluating SciPy's multivariate normal CDF one row at a time. It is slow per
+row and randomised, so a `dependence="joint"` fit through it is not exactly
+reproducible. `evaluator="orthant"` is faster but platform-bound; see the next
+entry. GHK simulation is not implemented.
 
 `dependence="pairwise"` is the escape hatch for *fitting* and has no such
-scaling — but it does not help with *evaluation*. Fitting d = 14 works; asking
-the resulting model for a joint probability does not, at any quadrature order.
-`predict_proba(X).marginal`, `decision_function` and `correlation_` remain
-available there; `joint_proba`, `.all()`, `.any()`, `.none()`, `score` and
-`sample` effectively do not.
+scaling, but it does not help with *evaluation*. Joint queries on a pairwise
+fit at large d (`joint_proba`, `.all()`, `.any()`, `.none()`, `score`) still go
+through the chosen evaluator and pay its price. `predict_proba(X).marginal`,
+`decision_function`, `correlation_` and `sample` need no orthant integral.
+
+**`evaluator="orthant"` is one platform only.** The compiled package is built
+for CPython 3.12 on x86-64 Linux. Every other platform and Python version gets
+an `ImportError` when it is selected. Without a key it is limited to d ≤ 3 at
+`resolution="low"`. It never falls back to another evaluator.
 
 **No analytic gradient for the Σ MLE.** `dependence="joint"` is derivative-free
 (Nelder-Mead) only. A closed-form gradient with respect to the correlation

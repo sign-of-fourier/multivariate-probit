@@ -16,13 +16,29 @@ from functools import lru_cache
 import numpy as np
 from scipy.stats import norm
 
-__all__ = ["bvn_cdf", "mvn_orthant", "orthant_prob", "pattern_prob", "signed_corr_stack", "RHO_MAX"]
+__all__ = [
+    "bvn_cdf",
+    "mvn_orthant",
+    "lower_orthant",
+    "orthant_prob",
+    "pattern_prob",
+    "signed_corr_stack",
+    "EVALUATORS",
+    "RHO_MAX",
+]
 
 # Correlations are kept strictly inside the unit interval: the quadrature below
 # degenerates at |rho| = 1, and a boundary correlation is never a defensible
 # estimate from finite data anyway.
 RHO_MAX = 0.999
 _EPS = 1e-12
+
+# The backends that can evaluate a lower-orthant probability. The choice is a
+# speed/accuracy trade-off left to the caller: "quadrature" is the
+# deterministic evaluator below, "scipy" is scipy.stats.multivariate_normal.cdf
+# (randomised quasi-Monte Carlo, one row at a time), and "orthant" is the
+# optional compiled package bundled under ``multivariate_probit.orthant``.
+EVALUATORS = ("quadrature", "scipy", "orthant")
 
 
 @lru_cache(maxsize=8)
@@ -110,6 +126,52 @@ def mvn_orthant(A, corr_stack, n_quad=24):
     return np.clip(phi_last * acc, 0.0, 1.0)
 
 
+def _scipy_orthant(A, corr_stack):
+    from scipy.stats import multivariate_normal
+
+    d = A.shape[1]
+    out = np.empty(A.shape[0])
+    for i in range(A.shape[0]):
+        out[i] = multivariate_normal(mean=np.zeros(d), cov=corr_stack[:, :, i]).cdf(A[i])
+    return out
+
+
+def _compiled_orthant(A, corr_stack, resolution):
+    try:
+        from . import orthant
+    except ImportError as exc:
+        raise ImportError(
+            "evaluator='orthant' is unavailable: the compiled orthant package "
+            "could not be loaded on this platform (it is built for CPython 3.12 "
+            f"on x86-64 Linux). Choose 'quadrature' or 'scipy'. Cause: {exc}"
+        ) from exc
+    stack = np.ascontiguousarray(np.moveaxis(corr_stack, 2, 0))
+    try:
+        prob = orthant.cdf(np.ascontiguousarray(A), stack, resolution=resolution)
+    except ValueError as exc:
+        raise ValueError(f"evaluator='orthant' (tier {orthant.tier!r}): {exc}") from exc
+    return np.asarray(prob, dtype=float)
+
+
+def lower_orthant(A, corr_stack, evaluator="quadrature", n_quad=24, resolution="high"):
+    """:func:`mvn_orthant` with a choice of backend.
+
+    ``n_quad`` is used only by ``"quadrature"`` and ``resolution`` only by
+    ``"orthant"``. A backend that cannot run as asked raises; nothing falls
+    back to another backend. Results are clipped to [0, 1].
+    """
+    A = np.atleast_2d(np.asarray(A, dtype=float))
+    if evaluator == "quadrature":
+        return mvn_orthant(A, corr_stack, n_quad=n_quad)
+    if evaluator == "scipy":
+        prob = _scipy_orthant(A, corr_stack)
+    elif evaluator == "orthant":
+        prob = _compiled_orthant(A, corr_stack, resolution)
+    else:
+        raise ValueError(f"evaluator must be one of {EVALUATORS}; got {evaluator!r}")
+    return np.clip(prob, 0.0, 1.0)
+
+
 def signed_corr_stack(corr, signs):
     """Stack ``corr_stack[i, j, row] = signs[row, i] * signs[row, j] * corr[i, j]``.
 
@@ -130,14 +192,14 @@ def signed_corr_stack(corr, signs):
     return stack
 
 
-def orthant_prob(upper, corr, n_quad=24):
+def orthant_prob(upper, corr, n_quad=24, evaluator="quadrature", resolution="high"):
     """P(Z_j <= upper[i, j] for all j) for a single shared correlation matrix."""
     upper = np.atleast_2d(np.asarray(upper, dtype=float))
     stack = signed_corr_stack(corr, np.ones_like(upper))
-    return mvn_orthant(upper, stack, n_quad=n_quad)
+    return lower_orthant(upper, stack, evaluator, n_quad=n_quad, resolution=resolution)
 
 
-def pattern_prob(eta, Y, corr, n_quad=24):
+def pattern_prob(eta, Y, corr, n_quad=24, evaluator="quadrature", resolution="high"):
     """``P(Y = y | x)`` for the multivariate probit, row by row.
 
     With ``s = 2y - 1`` the event ``{Y = y}`` is the orthant
@@ -152,4 +214,6 @@ def pattern_prob(eta, Y, corr, n_quad=24):
         raise ValueError(f"eta {eta.shape} and Y {Y.shape} must have the same shape")
 
     signs = 2.0 * Y - 1.0
-    return mvn_orthant(signs * eta, signed_corr_stack(corr, signs), n_quad=n_quad)
+    return lower_orthant(
+        signs * eta, signed_corr_stack(corr, signs), evaluator, n_quad=n_quad, resolution=resolution
+    )

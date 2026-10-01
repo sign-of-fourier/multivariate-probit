@@ -17,8 +17,9 @@ venv/
 # Local data, not redistributed
 UCI/
 
-# Third-party binary, not redistributable
+# Compiled extensions, except the bundled orthant package
 *.so
+!src/multivariate_probit/orthant/*.so
 
 # Local agent notes, never part of the repo
 CLAUDE.md

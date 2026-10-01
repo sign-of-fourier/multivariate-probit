@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import norm
 
-from ._mvn import mvn_orthant, pattern_prob, signed_corr_stack
+from ._mvn import lower_orthant, pattern_prob, signed_corr_stack
 
 __all__ = ["MultivariateProbitProba"]
 
@@ -19,11 +19,19 @@ class MultivariateProbitProba:
     correlation matrix was estimated in the first place.
     """
 
-    def __init__(self, eta, corr, n_quad=24):
+    def __init__(self, eta, corr, n_quad=24, evaluator="quadrature", resolution="high"):
         self.eta = np.atleast_2d(np.asarray(eta, dtype=float))
         self.marginal = norm.cdf(self.eta)
         self.corr = np.asarray(corr, dtype=float)
         self.n_quad = n_quad
+        self.evaluator = evaluator
+        self.resolution = resolution
+
+    def _orthant(self, upper, corr):
+        stack = signed_corr_stack(corr, np.ones_like(upper))
+        return lower_orthant(
+            upper, stack, self.evaluator, n_quad=self.n_quad, resolution=self.resolution
+        )
 
     # ------------------------------------------------------ array behaviour
 
@@ -55,12 +63,19 @@ class MultivariateProbitProba:
         pattern = np.asarray(pattern, dtype=float)
         if pattern.ndim == 1:
             pattern = pattern[None, :]
-        return pattern_prob(self.eta, pattern, self.corr, n_quad=self.n_quad)
+        return pattern_prob(
+            self.eta,
+            pattern,
+            self.corr,
+            n_quad=self.n_quad,
+            evaluator=self.evaluator,
+            resolution=self.resolution,
+        )
 
     def all(self, outcomes=None):
         """``P(every selected outcome = 1 | x)``. Defaults to all outcomes."""
         eta, corr = self._subset(outcomes)
-        return mvn_orthant(eta, signed_corr_stack(corr, np.ones_like(eta)), n_quad=self.n_quad)
+        return self._orthant(eta, corr)
 
     def any(self, outcomes=None):
         """``P(at least one selected outcome = 1 | x)``. Defaults to all outcomes."""
@@ -69,4 +84,4 @@ class MultivariateProbitProba:
     def none(self, outcomes=None):
         """``P(no selected outcome = 1 | x)``. Defaults to all outcomes."""
         eta, corr = self._subset(outcomes)
-        return mvn_orthant(-eta, signed_corr_stack(corr, np.ones_like(eta)), n_quad=self.n_quad)
+        return self._orthant(-eta, corr)
