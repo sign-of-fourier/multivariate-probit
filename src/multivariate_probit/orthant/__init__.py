@@ -116,6 +116,14 @@ def _bind():
     if key is not None:
         try:
             mod = _import_extension(_decrypt_paid(key), "_ocore")
+        except ImportError as e:
+            # Not a key problem: a missing dependency or a binary that won't
+            # load on this platform.  Say so rather than blaming the key.
+            notice = ("orthant: key found but the paid binary could not be "
+                      "loaded (%s) -- running in FREE mode (n<=3, "
+                      "resolution='low').\n" % e)
+            if (e.name or "").startswith("cryptography"):
+                notice += "         pip install cryptography\n"
         except Exception:
             notice = ("orthant: key invalid or unreadable -- running in FREE "
                       "mode (n<=3, resolution='low').\n"
