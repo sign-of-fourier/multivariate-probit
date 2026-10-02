@@ -42,10 +42,11 @@ class ProbitRegressor:
             return np.hstack([np.ones((X.shape[0], 1)), X])
         return X
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         Z = self._design(X)
         y = np.asarray(y, dtype=float).ravel()
         n, p = Z.shape
+        sw = np.ones(n) if sample_weight is None else np.asarray(sample_weight, dtype=float).ravel()
 
         penalty = np.full(p, float(self.alpha))
         if self.fit_intercept:
@@ -60,7 +61,7 @@ class ProbitRegressor:
             dens = np.maximum(norm.pdf(eta), _P_EPS)
 
             # IRLS weights and working response for the probit link.
-            w = dens**2 / (prob * (1.0 - prob))
+            w = sw * dens**2 / (prob * (1.0 - prob))
             working = eta + (y - prob) / dens
 
             lhs = Z.T @ (Z * w[:, None]) + ridge

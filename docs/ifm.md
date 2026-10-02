@@ -15,6 +15,8 @@ score (attribute `eta_`). Σ is the latent correlation matrix — a *correlation
 matrix, with unit diagonal, not a covariance matrix (attribute
 `correlation_`). Φ and φ are the standard normal CDF and density; Φ_d is the
 d-variate normal CDF. `d` counts outcomes, `n` counts observations.
+[What Sigma is conditional on](#what-sigma-is-conditional-on) splits η_j into a
+fitted and an ideal version, and says so locally; nowhere else does.
 
 ## What IFM is
 
@@ -175,9 +177,14 @@ Pairwise estimates carry no such constraint — each ρ_jk is fitted in isolatio
 so the assembled matrix can fail to be positive definite when d ≥ 3. It is
 projected onto the nearest correlation matrix by Higham's (2002) alternating
 projections, with a small eigenvalue floor so the result is strictly positive
-definite and safe to Cholesky-factor for sampling. In practice the projection
-is a no-op unless the pairwise estimates are genuinely contradictory or the
-sample is small.
+definite and safe to Cholesky-factor for sampling.
+
+How often this engages depends entirely on the data. On the UCI credit study it
+never did — Σ stayed well conditioned throughout. On multi-label benchmark data
+the smallest eigenvalue hit the floor in 11 of 12 fits, so the projection was
+doing real work almost every time
+([studies/mulan-multilabel.md](studies/mulan-multilabel.md)). Treat it as an
+active part of the estimator at larger d, not a formality.
 
 ## Why cross-fitting is required
 
@@ -220,13 +227,135 @@ them distinct:
 - **Cross-fitted margins leave a residual downward bias.** An out-of-fold index
   still carries genuine prediction error, and noise in a regressor attenuates
   the correlation measured through it — classical errors-in-variables. In the
-  table, cross-fit estimates land at 0.376 and 0.340 against a true 0.6.
+  table, cross-fit estimates land at 0.376 and 0.340 against a true 0.6. The
+  algebra is in the next section, as Gap B.
 
 So cross-fitting trades a large upward bias for a smaller downward one. Treat a
 fitted correlation as a **floor** on the true dependence when the margins are
 only moderately predictive; the gap closes as the margins get sharper. Nothing
 in the estimator corrects for the second effect, and correcting it would
 require knowing the margins' prediction error on the latent scale.
+
+## What Sigma is conditional on
+
+Step 4 takes the fitted index as given and evaluates
+`P(Y_j = 1, Y_k = 1 | x) = Φ_2(η_j, η_k; ρ_jk)`. That is valid only if the
+index it is handed satisfies
+
+```
+P(Y_j = 1 | x) = Φ( η_j(x) )    for all x
+```
+
+Two distinct things separate the fitted index from the truth, and **they are
+not the same kind of defect**. Write η*_j for the index a fully specified model
+would use, η_j for the ideal index given only the features this model sees,
+
+```
+η_j(x) = Φ⁻¹( P(Y_j = 1 | x) )
+```
+
+and η̂_j for the one that was actually fitted. Elsewhere in this file η_j is
+the index the estimator works with — `eta_`, the fitted one. This section is
+the one place the three are separated, because the difference between them is
+the subject.
+
+### Gap A — the estimand moves
+
+The features and the functional form may omit determinants of the outcome.
+Projecting the full-information index onto the fitted one,
+
+```
+η*_j = c_j η_j + b_j + w_j,    w_j independent of η_j,   Var(w_j) = v_j
+```
+
+The omitted part w_j joins the latent error, so `w_j + e_j` has variance
+`1 + v_j`. Dividing through to restore the unit diagonal the model requires,
+the correlation stage two can recover is
+
+```
+ρ_recovered = [ ρ_jk + Cov(w_j, w_k) ] / sqrt( (1 + v_j) (1 + v_k) )
+```
+
+**This is not an estimation error.** A margin calibrated with respect to x
+satisfies the display above by construction, and Σ then measures dependence
+*conditional on x*, with the omitted shared variation correctly counted as part
+of it. That is a well-posed quantity, and often the one a caller wants. It is
+simply not the structural correlation of a fully specified model.
+
+The two terms pull opposite ways. `Cov(w_j, w_k) > 0` — margins missing the
+*same* thing — raises ρ_recovered, with no bound and no fixed sign in general;
+`v_j > 0` shrinks whatever the numerator is. The denominator has been checked
+against known v on synthetic draws; the numerator has not
+([studies/margin-gaps.md](studies/margin-gaps.md)).
+
+Nothing can correct this, and no diagnostic can detect it. The marginal law of
+(Y_j, η̂_j) depends on c_j and v_j only through `c_j / sqrt(1 + v_j)`: a margin
+that is correctly scaled but incomplete and one that is over-dispersed but
+complete produce identical marginal data while implying different Σ. The
+information is not in the data being fitted, at any level of flexibility.
+
+### Gap B — a real bias
+
+The fitted index also differs from the ideal one by finite-sample estimation
+error and by miscalibration of the classifier. This is **different algebra, not
+the same mechanism at a different stage**. Write
+
+```
+η̂_j = η_j + u_j,    Var(u_j) = τ_j²,   Var(η_j) = σ_j²
+```
+
+Here u_j is *part of* η̂_j — the estimator conditions on the noisy index rather
+than on a clean one perturbed afterwards — so this is classical measurement
+error, not the Berkson form of Gap A. The reliability ratio is
+
+```
+λ_j = σ_j² / (σ_j² + τ_j²)   < 1
+```
+
+with `E[η_j | η̂_j] = λ_j η̂_j + (1 - λ_j) m_j` and residual variance
+`λ_j τ_j²`. Substituting as before, and for estimation errors independent
+across margins,
+
+```
+ρ_recovered = ρ_jk / sqrt( (1 + λ_j τ_j²) (1 + λ_k τ_k²) )
+```
+
+This is a genuine downward bias — u_j is no part of the conditional estimand —
+and it is the residual attenuation the previous section describes. It is
+derivable rather than empirical.
+
+### The calibration slope sees exactly one of them
+
+After step 3 the cross-fitted η̂ and the labels are both in hand, so a
+probit of Y_j on η̂_j costs one one-dimensional fit per outcome and no extra
+inner-model fits. Its slope is the **calibration slope** of prognostic-model
+validation (Cox), reported as `calibration_`, and what it estimates is
+`λ / sqrt(1 + λ τ²)`. That is the reliability of the fitted index, which is
+precisely the quantity separating the two gaps:
+
+| | calibration slope | Σ |
+| --- | --- | --- |
+| Gap A (omitted signal) | exactly 1 | moves, legitimately |
+| Gap B (estimation error) | strictly below 1 | biased down |
+
+Two consequences follow, and both matter more than the number itself:
+
+- A quiet diagnostic is **not** evidence that Σ is trustworthy. It rules out
+  one of the two mechanisms, and not the one that moves Σ furthest. On
+  synthetic Gap A draws the slope holds at 1.00 while ρ falls by a factor of
+  three ([studies/margin-gaps.md](studies/margin-gaps.md)).
+- A slope far *above* 1 is a third thing again: the index has absorbed the
+  noise of the rows it is being scored on, so the labels look more predictable
+  than the index admits. That is the memorisation signature cross-fitting
+  exists to remove.
+
+Neither gap is corrected. Gap A cannot be, for the identifiability reason
+above. Gap B could be, since the slope estimates the very reliability that
+attenuates Σ — but the slope is itself estimated, dividing by it amplifies its
+error into Σ, and the result would be a point estimate with no standard error
+to say how far to trust it. Correcting one gap while the other stays silent
+would make `correlation_` harder to interpret, not easier. Report both, correct
+neither. See [limitations.md](limitations.md).
 
 ## Why not full joint MLE (FIML)
 
@@ -276,6 +405,16 @@ and rejected, each variant for a specific, empirically confirmed reason:
   raw-Y and the correct value, since removing a genuinely positive
   shared-predictor contribution pulls the number down further.
 
+- **Rank-transforming the predicted probabilities first** — empirical CDF per
+  margin, then Φ⁻¹, then Pearson. This is a monotone reparameterisation of the
+  first bullet and inherits its verdict: measured against arm (b) on the same
+  cross-fitted indices, the rank step moves the answer by 0.003 on average and
+  never more than 0.011. What the number tracks is the overlap between the
+  margins' predictors, not ρ. On synthetic draws with a true ρ of 0 and 60%
+  shared index variance it returns 0.58; with a true ρ of 0.5 and disjoint
+  predictors it returns 0.02
+  ([studies/index-correlation-shortcut.md](studies/index-correlation-shortcut.md)).
+
 All three are linear correlation measures applied to a relationship that is
 nonlinear by construction (a threshold on a latent Gaussian). Only the
 maximum-likelihood approach above, working through Φ, correctly inverts that
@@ -288,65 +427,18 @@ support, and nothing constrains the result to be consistent with the marginals.
 
 ## Validation on real data
 
-Everything above was developed against synthetic draws, where the true Σ is
-known. The claim that matters most in practice — that the composite pairwise
-objective is a legitimate substitute for the full likelihood — was checked on
-the UCI *Default of Credit Card Clients* data (Yeh & Lien, 2009): 30,000
-clients, three binary outcomes (any repayment delay in September, July and
-April 2005, i.e. `PAY_0`, `PAY_3`, `PAY_6` > 0), five demographic predictors
-(`LIMIT_BAL`, `SEX`, `EDUCATION`, `MARRIAGE`, `AGE`), an 80/20 split and
-`cv=5`. Outcome prevalence was 22.8 / 14.0 / 10.2 percent. The dataset is not
-redistributed with this library.
+The composite pairwise objective was checked against the full likelihood on the
+UCI *Default of Credit Card Clients* data: 30,000 clients, three binary
+repayment-delay outcomes, five demographic predictors. At d = 3 with moderate
+positive correlations, `"pairwise"` gives up about 1e-4 nats/row of held-out
+likelihood and saves two orders of magnitude of fitting time, and both modes
+reproduce an independent tetrachoric fit on the same data.
 
-Both modes were run on identical margins — same inner model, same seed, same
-folds — so the only thing varying is stage two.
-
-Fitted correlations (ρ_12, ρ_13, ρ_23):
-
-| inner | joint | pairwise | max entrywise difference |
-| --- | --- | --- | --- |
-| linear | 0.669, 0.523, 0.682 | 0.673, 0.535, 0.690 | 0.012 |
-| xgboost | 0.655, 0.510, 0.667 | 0.661, 0.524, 0.676 | 0.014 |
-
-Pairwise came out slightly higher in every entry — a small systematic offset,
-not noise.
-
-Cost of stage two alone, on the same cross-fitted η (30,000 rows, d = 3):
-
-| inner | pairwise | joint | ratio |
-| --- | --- | --- | --- |
-| linear | 0.53 s | 60.3 s | 114x |
-| xgboost | 0.52 s | 45.6 s | 88x |
-
-Held-out mean joint log-likelihood:
-
-| inner | joint | pairwise | difference |
-| --- | --- | --- | --- |
-| linear | -1.09124 | -1.09131 | 0.00007 nats/row |
-| xgboost | -1.08451 | -1.08461 | 0.00010 nats/row |
-
-Per-row `P(all three late)` differed between modes by 0.001 on average, 0.0026
-at worst. Marginal AUC, log-loss and Brier are identical across modes by
-construction, since the margins are stage one.
-
-An independent earlier tetrachoric/Gaussian-copula fit on the same data found
-correlations in the 0.51-0.66 range, with AUC 0.72, log-loss 0.173 and Brier
-0.043 for the joint event "late in all three months". Both modes reproduce it:
-correlations 0.510-0.655, and for that same joint event AUC 0.7224, log-loss
-0.1827, Brier 0.0458.
-
-**Conclusion.** At d = 3 with moderate positive correlations, `"pairwise"`
-gives up about 1e-4 nats/row of held-out likelihood and saves two orders of
-magnitude of fitting time. That is a strong result for the composite objective,
-but it is evidence from one regime only: Σ was well conditioned throughout
-(smallest eigenvalue 0.27 or above), so the projection step never engaged, and
-nothing here speaks to large d, near-singular Σ, or strongly mixed-sign
-correlations — the settings where a composite likelihood is most likely to
-diverge from the full one.
-
-Note also what this study does *not* establish. Cross-fitting was used
-throughout, so these runs assume the case made above rather than retesting it;
-the in-sample bias measurement remains synthetic.
+That is evidence from one regime only — Σ well conditioned throughout, so the
+projection step never engaged — and it validates the *objective*, not Σ itself,
+since the true Σ is unknown there. Numbers, configuration, the sampling noise
+floor and the full list of what it does not establish are in
+[studies/uci-credit.md](studies/uci-credit.md).
 
 ## Computational cost
 
