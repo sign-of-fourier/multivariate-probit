@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "multivariate-probit"
-version = "0.2.0"
+version = "0.2.1"
 description = "Multivariate probit models fitted by Inference Functions for Margins (IFM), with pluggable inner models."
 readme = "README.md"
 license = { file = "LICENSE" }
