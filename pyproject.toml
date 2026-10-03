@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "multivariate-probit"
-version = "0.2.1"
+version = "0.2.2"
 description = "Multivariate probit models fitted by Inference Functions for Margins (IFM), with pluggable inner models."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 authors = [{ name = "Mark Shipman" }]
 keywords = ["multivariate probit", "copula", "IFM", "correlated binary outcomes", "xgboost"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -28,8 +28,9 @@ all = ["scikit-learn>=1.1", "xgboost>=1.7", "cryptography>=42"]
 dev = ["pytest>=7", "scikit-learn>=1.1", "xgboost>=1.7", "cryptography>=42"]
 
 [project.urls]
-Homepage = "https://github.com/sign-of-fourier/multivariate-probit"
-Documentation = "https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/ifm.md"
+Homepage = "https://quantecarlo.com/multivariate-probit"
+Source = "https://github.com/sign-of-fourier/multivariate-probit"
+Documentation = "https://github.com/sign-of-fourier/multivariate-probit/tree/main/docs"
 Issues = "https://github.com/sign-of-fourier/multivariate-probit/issues"
 
 [tool.hatch.build.targets.wheel]

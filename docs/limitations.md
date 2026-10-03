@@ -1,8 +1,6 @@
 # Known gaps and roadmap
 
-Current version: 0.1.0 (alpha). This is a first, deliberately minimal
-implementation. The gaps below are known and stated rather than discovered
-later.
+The gaps below are known and stated rather than discovered later.
 
 ## Statistical
 
@@ -123,11 +121,6 @@ appear in every cross-validation fold. A fold with a single-class training
 split will fail or produce a degenerate margin. Check outcome prevalence before
 raising `cv`.
 
-## Coverage
-
-**The `rf` preset is untested.** It is registered and it runs, but no test
-pins its behaviour. `linear` and `xgboost` are covered.
-
 ## Not implemented
 
 **FIML.** Full joint estimation is not supported, for the reasons in
@@ -150,7 +143,7 @@ A](ifm.md#gap-a--the-estimand-moves), a well-defined change of estimand) —
 something. That is an argument with an assumption in it, not a result: it
 requires the calibrator to be rich enough and genuinely out of fold. Nothing
 here measures it. The `rf` preset is the natural vehicle, since vote shares are
-the textbook uncalibrated probability and the preset is untested anyway. Tracked in
+the textbook uncalibrated probability. Tracked in
 [studies/margin-gaps.md](studies/margin-gaps.md).
 
 **Sparse input.** Dense arrays only; `X` is coerced with `numpy.asarray`.

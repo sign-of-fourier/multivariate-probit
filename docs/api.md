@@ -72,7 +72,14 @@ queries on a pairwise fit still use the chosen backend.
 | --- | --- | --- |
 | `"quadrature"` | Genz's recursive conditioning with a fixed Gauss-Legendre rule of order `n_quad` (see [implementation.md](implementation.md)). | Deterministic and accurate. Cost grows as `n_quad ** (d - 2)`, so it becomes impractical well before d = 10. |
 | `"scipy"` | `scipy.stats.multivariate_normal.cdf`, one row at a time. | Reaches any d, but is slow per row and randomised: a `dependence="joint"` fit is not exactly reproducible, and its noisy objective can stall the simplex. |
-| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.11 and 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. |
+| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.11 and 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. Accuracy and speed against GHK and SciPy: [studies/ghk.md](studies/ghk.md). |
+
+For test sets too large for one machine, the same evaluator runs as a hosted
+GPU service, `quantecarlo.orthant_cdf`: about a second per million rows at
+d = 20, most of it upload. For a fitted model, `orthant_cdf(model.transform(X),
+model.correlation_, signs=2 * y - 1)` is `P(Y = y | x)` for one pattern `y`; see
+the
+[quantecarlo README](https://github.com/sign-of-fourier/quantecarlo#orthant-probabilities-orthant_cdf).
 
 ### Attributes
 
@@ -117,9 +124,19 @@ probabilities — `np.asarray(proba)`, `proba[i, j]`, `proba.shape`, `len(proba)
 | `.all(outcomes=None)` | (n,) | `P(every selected outcome = 1 | x)`. |
 | `.any(outcomes=None)` | (n,) | `P(at least one selected outcome = 1 | x)`. |
 | `.none(outcomes=None)` | (n,) | `P(no selected outcome = 1 | x)`. |
+| `.conditional(event, given)` | (n,) | `P(event | given, x)`. Both map outcome index to 0/1; a value may be an (n,) array, so each row can be conditioned on its own observed outcomes. An int `event` means `{event: 1}`. |
 
 `outcomes` takes a list of column indices, so "do these three co-occur" is a
 one-liner.
+
+```python
+proba.conditional(2, given={0: 1, 1: 0})        # P(Y_2 = 1 | Y_0 = 1, Y_1 = 0, x)
+proba.conditional({2: 1}, given={0: Y_test[:, 0]})  # condition each row on its observed Y_0
+```
+
+`conditional` computes `P(given)` as the sum over all values of the event
+outcomes, so it costs `2 ** len(event)` orthant evaluations and the
+conditionals of one event sum to 1 exactly. A row where `P(given) = 0` is NaN.
 
 ## Inner models
 

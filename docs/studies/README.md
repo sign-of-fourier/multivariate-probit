@@ -26,6 +26,7 @@ and what is still open. Datasets are never committed.
 | [index-correlation-shortcut.md](index-correlation-shortcut.md) | Can Σ be read off the marginal predictions, skipping stage two? | no; the shortcut tracks predictor overlap, not ρ |
 | [log-score-evaluator.md](log-score-evaluator.md) | What does the approximate evaluator cost at d = 14? | no ranking or subset-accuracy change, but it reads low on a general Σ (0.006 on the median observed pattern, 0.027 on the modal one); unusable for a mean |
 | [comparators.md](comparators.md) | What do joint, pairwise, statsmodels and the orthant .so trade in accuracy and speed? | statsmodels biased on joint queries; pairwise matches joint at ~1/3000 the fit time; the .so is accurate only off the PSD boundary; SciPy's cost tracks p, not d |
+| [ghk.md](ghk.md) | For scoring, how does GHK compare with the compiled orthant backend? | compiled backend 3-6x faster than GHK-100 at comparable accuracy, deterministic; GHK-1000 more accurate on a pairwise-shaped Σ at 15-20x the time |
 
 ## External references
 

@@ -39,8 +39,9 @@ the settled order for a joint log score, batched over 50 rows at d ≤ 6 and
 timed on one row at d = 7. The .so batched over 50 rows. SciPy one row at a
 time.
 
-**The .so against SciPy.** The third-party orthant binary is not a dependency
-of this package and appears here only as a measurement subject. Each row
+**The .so against SciPy.** The binary measured here is the trial build that
+preceded the `orthant` package now bundled as `evaluator="orthant"`; the
+shipped build is measured in [ghk.md](ghk.md). Each row
 scores the probability of the pattern that actually occurred: η drawn
 `N(0, 1)`, the pattern drawn from the model itself, so the probabilities have
 realistic sizes. SciPy (`multivariate_normal.cdf`, default tolerances,
@@ -156,6 +157,15 @@ and 88 minutes for 917 rows.
 Reporting an error as a difference is the right convention. A *tolerance*
 for a log score still has to be relative (`releps`), because the absolute
 default is exactly what lets the smallest rows through with no precision.
+
+## Other Python implementations
+
+[multinomial_probit](https://github.com/david-cortes/multinomial_probit)
+(David Cortes, archived February 2024) fits a full-likelihood probit for one
+categorical outcome. Applied to d binary outcomes it has to treat each of the
+2^d patterns as a class. In the same d = 4 setup, with current SciPy, every
+run returned NaN coefficients or exceeded 30 s, so it has no row in the tables
+above.
 
 ## What this does not establish
 

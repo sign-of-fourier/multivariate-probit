@@ -104,7 +104,9 @@ probit link.
 **GHK simulation** for the orthant probability. Rejected for the same reason as
 SciPy's QMC integrator: a stochastic likelihood inside a derivative-free
 optimizer. The deterministic recursion is used instead, at the cost of scaling
-poorly past d ≈ 7.
+poorly past d ≈ 7. For scoring a fitted model, where that objection does not
+apply, GHK is measured against the compiled backend in
+[studies/ghk.md](studies/ghk.md).
 
 ## Numerical accuracy
 

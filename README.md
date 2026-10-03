@@ -1,118 +1,145 @@
 # multivariate-probit
 
-Multivariate probit models for correlated binary outcomes, with a pluggable
-inner model.
+Correlated yes/no outcomes, modelled together. Bring any classifier for each
+outcome; the package estimates how the outcomes move together and answers every
+joint question from one fitted model.
 
-## The model
+```bash
+pip install multivariate-probit
+```
 
-Each outcome is a threshold on a latent Gaussian variable, and the outcomes are
-tied together by the correlation of those latents:
+**Speed.** Fitting the dependence takes about 0.07 s where a full-likelihood
+fit takes minutes. Scoring runs at 2e-5 to 9e-5 s per row up to d = 20 with
+the compiled backend, and about a second per million rows on the hosted GPU
+service, against 3e-3 to 2 s per row for SciPy. The cost is a median error of
+up to about 0.007 on a probability, roughly 100-draw GHK accuracy
+([studies/ghk.md](docs/studies/ghk.md)).
+
+Background and worked examples: **[quantecarlo.com/multivariate-probit](https://quantecarlo.com/multivariate-probit)**.
+
+## 1. Explainable when the target breaks into parts
+
+Many targets are a combination of simpler outcomes: a conversion is a click,
+a sign-up and a purchase; a claim is fraud on any of several checks. Model the
+parts and the combination falls out:
 
 ```
 Y_j = 1[ η_j(x) + e_j > 0 ],    e ~ N(0, Σ),    j = 1 … d
 ```
 
-`η_j` is an arbitrary real-valued function of the features — linear by default,
-or XGBoost, a random forest, or anything else that fits `(X, y)`. Σ is a
-correlation matrix (unit diagonal) carrying the dependence between outcomes.
-Marginally, `P(Y_j = 1 | x) = Φ(η_j(x))`.
+- Each part has its own margin, `P(Y_j = 1 | x) = Φ(η_j(x))`, from a model you
+  can inspect on its own.
+- How the parts move together is Σ: d(d-1)/2 correlations, each one readable.
+- Every question about the parts is an exact consequence of those two pieces:
+  a full pattern, all, any, none, or one part given the others. The 2^d pattern
+  probabilities sum to 1 exactly.
 
-Fitting is cross-fit two-stage IFM: every margin is fitted independently, then
-Σ is estimated by maximum likelihood with those margins held fixed. That
-separation is what lets the inner model be a black box. The algorithm, and the
-alternatives that were tested and rejected, are in
-**[docs/ifm.md](docs/ifm.md)**.
+```python
+proba = model.predict_proba(X)
+proba.all([0, 1, 2])                  # converted: clicked AND signed up AND bought
+proba.any([3, 4, 5])                  # flagged by at least one check
+proba.conditional(2, given={0: 1})    # P(buys | clicked, x)
+```
 
-## Install
+The other multivariate-probit options in Python do not get there.
+`statsmodels` fits one probit per outcome, so it has margins but no Σ, and its
+joint answers are biased: `P(any)` off by +0.072 at ρ = +0.6 where this package
+is off by 0.020 ([studies/comparators.md](docs/studies/comparators.md)).
+[multinomial_probit](https://github.com/david-cortes/multinomial_probit) (David
+Cortes, archived 2024) is a full-likelihood probit for one categorical outcome;
+applied here it has to treat every one of the 2^d patterns as its own class,
+and on current SciPy its fit returned NaN coefficients or ran past 30 s on
+every test run. Fitting a full probit likelihood directly is hard in general;
+the next section is how this package avoids it.
+
+## 2. IFM makes the fit tractable
+
+Fitting margins and Σ jointly means evaluating a d-dimensional normal integral
+inside every step of every margin's optimizer, and it rules out any margin that
+is not fitted by gradient, such as a boosted ensemble. Inference Functions for
+Margins splits the fit in two:
+
+1. Fit each margin on its own, cross-fitted so Σ never sees in-sample
+   predictions (in-sample margins drive every correlation toward +1).
+2. Holding the margins fixed, estimate Σ by maximum likelihood, either over
+   the full d-variate likelihood (`dependence="joint"`) or pair by pair
+   (`dependence="pairwise"`, closed-form bivariate integrals).
+
+The pairwise fit matched the joint fit's accuracy in testing at about 1/3000 of
+the time (0.07 s against 2-4 minutes at d = 4). Algorithm and the alternatives
+rejected: **[docs/ifm.md](docs/ifm.md)**.
+
+## 3. Scales, with a small accuracy trade-off
+
+Scoring a fitted model, `P(Y = y | x)` per row, is a d-dimensional integral per
+row. Three evaluators, chosen with `evaluator=`, plus a hosted service:
+
+| Route | Speed | Accuracy |
+| --- | --- | --- |
+| `"quadrature"` (default) | 8e-5 s per row at d = 3, 0.1 s at d = 6, impractical past 7 | about 1e-5, deterministic |
+| `"scipy"` | 3e-3 to 2 s per row, any d | reference grade, random |
+| `"orthant"` (compiled, keyed) | 2e-5 to 9e-5 s per row, flat to d = 20 | median error ≤ 0.007, deterministic |
+| [`quantecarlo.orthant_cdf`](https://github.com/sign-of-fourier/quantecarlo#orthant-probabilities-orthant_cdf) (hosted GPU) | about 1 s per million rows at d = 20 | same as `"orthant"` |
 
 ```bash
-pip install multivariate-probit           # core: numpy + scipy
-pip install multivariate-probit[xgboost]  # adds the "xgboost" preset
-pip install multivariate-probit[all]      # every preset
+pip install multivariate-probit[orthant]   # CPython 3.11/3.12, x86-64 Linux
 ```
+
+Without a key, `"orthant"` runs d ≤ 3 at `resolution="low"`. A key unlocks
+every d: [quantecarlo.com/orthant_key](https://quantecarlo.com/orthant_key).
+Measurements: [studies/ghk.md](docs/studies/ghk.md).
+
+## 4. Bring your own model, or use ours
+
+Stage two consumes only each margin's latent index η_j(x), so the inner model
+is a black box: anything with `predict_proba`, or anything with `latent(X)`.
+
+| Preset | Estimator | Requires |
+| --- | --- | --- |
+| `"linear"` (default), `"probit"` | native probit via IRLS | — |
+| `"xgboost"`, `"xgb"` | `XGBClassifier`, tuned for calibration | `[xgboost]` |
+| `"rf"`, `"random_forest"` | `RandomForestClassifier` | `[sklearn]` |
+
+```python
+MultivariateProbit(inner="rf")                             # a preset
+MultivariateProbit(inner=XGBClassifier(max_depth=4))       # any sklearn-shaped classifier
+MultivariateProbit(inner=["linear", "xgboost", "rf"])      # one per outcome
+register_inner("mine", make_my_model)                      # your own preset
+```
+
+The contract, and why an uncalibrated score is rejected:
+**[docs/api.md](docs/api.md#inner-models)**.
 
 ## Quickstart
 
 ```python
 from multivariate_probit import MultivariateProbit
 
-model = MultivariateProbit(inner="linear").fit(X, Y)   # Y is (n, d), 0/1
+model = MultivariateProbit(inner="xgboost", dependence="pairwise").fit(X, Y)  # Y is (n, d), 0/1
 
 proba = model.predict_proba(X)
 proba.marginal                  # P(Y_j = 1 | x), shape (n, d)
 proba.joint([1, 0, 1])          # P(Y = pattern | x), shape (n,)
-proba.all()                     # P(every outcome = 1 | x)
-proba.any(outcomes=[0, 2])      # P(at least one of these | x)
+proba.all(), proba.any()        # P(every / at least one outcome = 1 | x)
+proba.conditional(2, given={0: 1, 1: 0})
 
 model.correlation_              # the fitted Σ, shape (d, d)
-model.transform(X)              # latent scores η, shape (n, d)
+model.calibration_              # per-margin calibration slope, a scale check
 model.sample(X, n_samples=100)  # simulated outcome patterns
 model.score(X, Y)               # mean joint log-likelihood
 ```
 
 `predict_proba` returns an object that behaves like the marginal-probability
-array (`np.asarray(proba)`, indexing, `.shape`) and additionally answers the
-joint questions Σ was estimated for. Marginal predictions do not involve Σ at
-all; everything joint does.
-
-## Everything here is a squashing function over a latent index
-
-The inner model never sees another outcome's labels. What stage two consumes is
-an unbounded index η_j(x) on (-∞, ∞); Φ is the only squashing function applied
-to it. A legal margin either produces that index directly, or emits a
-probability that is pushed back through Φ⁻¹ — a classifier with `predict_proba`.
-An uncalibrated `decision_function` score is not enough, since its scale is
-arbitrary.
-
-That is the whole abstraction, and it is why the inner model is swappable
-without touching the estimation code.
-
-## Inner models
-
-| Preset | Estimator | Requires |
-| --- | --- | --- |
-| `"linear"` (default), `"probit"` | native probit via IRLS | — |
-| `"xgboost"`, `"xgb"` | `XGBClassifier`, tuned for calibration | `xgboost` |
-| `"rf"`, `"random_forest"` | `RandomForestClassifier` | `scikit-learn` |
-
-```python
-MultivariateProbit(inner="xgboost")                        # a preset
-MultivariateProbit(inner=XGBClassifier(max_depth=4))       # any sklearn-shaped model
-MultivariateProbit(inner=["linear", "xgboost", "linear"])  # one per outcome
-```
-
-`available_inners()` lists the presets; `register_inner(name, factory)` adds
-your own. See **[docs/api.md](docs/api.md)** for the inner-model contract.
-
-## Two knobs that cost time
-
-- **`dependence`** — `"joint"` (default) maximises the full d-variate
-  likelihood for Σ. `"pairwise"` maximises each pair's bivariate likelihood
-  instead: consistent, orders of magnitude cheaper, and the right choice once
-  you have more than a handful of outcomes.
-- **`cv`** — `5` by default, cross-fitting the margins so Σ is never estimated
-  from in-sample predictions. This is not optional hygiene: in-sample margins
-  drive every fitted correlation to +1. `cv=None` skips it, which is defensible
-  for the linear default and reckless for anything that can overfit.
-
-## Status
-
-Alpha. The linear and XGBoost paths are covered by tests; the `rf` preset is
-wired but untested. Standard errors are not computed — `correlation_` is a
-point estimate. Known gaps are listed in
-**[docs/limitations.md](docs/limitations.md)**.
+array and also answers the joint questions. Marginal predictions do not involve
+Σ; everything joint does.
 
 ## Documentation
 
-- **[docs/ifm.md](docs/ifm.md)** — the estimation algorithm, and why IFM over
-  the alternatives
-- **[docs/implementation.md](docs/implementation.md)** — what is hand-rolled,
-  what comes from SciPy, and why
-- **[docs/api.md](docs/api.md)** — parameters, attributes, methods, extension
-  points
-- **[docs/limitations.md](docs/limitations.md)** — known gaps and roadmap
-- **[docs/studies/](docs/studies/)** — the research archive: what was measured,
-  what it settled, and what it left open
+- **[docs/ifm.md](docs/ifm.md)**: the estimation algorithm, and why IFM
+- **[docs/api.md](docs/api.md)**: parameters, evaluators, inner-model contract
+- **[docs/implementation.md](docs/implementation.md)**: what is hand-rolled, numerical accuracy
+- **[docs/limitations.md](docs/limitations.md)**: known gaps (no standard errors yet; Σ is a point estimate)
+- **[docs/studies/](docs/studies/)**: every measurement behind the claims above
 
 ## Development
 
