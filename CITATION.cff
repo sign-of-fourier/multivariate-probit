@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "multivariate-probit: joint probabilities for correlated binary outcomes"
+type: software
+authors:
+  - family-names: Shipman
+    given-names: Mark
+    orcid: "https://orcid.org/0009-0008-7193-1263"
+version: 0.2.2
+# TODO(Mark): add date-released (YYYY-MM-DD) when 0.2.2 is published.
+license: MIT
+repository-code: "https://github.com/sign-of-fourier/multivariate-probit"
+url: "https://quantecarlo.com/multivariate-probit"
+keywords:
+  - multivariate probit
+  - correlated binary outcomes
+  - multilabel classification
+  - joint probability
+  - Gaussian copula
+  - inference functions for margins

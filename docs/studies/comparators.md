@@ -158,15 +158,6 @@ Reporting an error as a difference is the right convention. A *tolerance*
 for a log score still has to be relative (`releps`), because the absolute
 default is exactly what lets the smallest rows through with no precision.
 
-## Other Python implementations
-
-[multinomial_probit](https://github.com/david-cortes/multinomial_probit)
-(David Cortes, archived February 2024) fits a full-likelihood probit for one
-categorical outcome. Applied to d binary outcomes it has to treat each of the
-2^d patterns as a class. In the same d = 4 setup, with current SciPy, every
-run returned NaN coefficients or exceeded 30 s, so it has no row in the tables
-above.
-
 ## What this does not establish
 
 - **d = 4, one Σ shape, one query for the accuracy comparison.** Joint was
