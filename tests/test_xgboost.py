@@ -128,3 +128,17 @@ def test_joint_dependence_with_boosted_margins():
     assert model.nll_ > 0 and np.isfinite(model.nll_)
     assert model.optimize_result_ is not None
     assert model.eta_.shape == Y.shape
+
+
+def test_sample_weight_reaches_the_booster():
+    """Upweighting the positives must raise the fitted marginal rate."""
+    X, Y = make_nonlinear_data(n=1500, seed=7)
+    w = np.where(Y[:, 0] == 1, 5.0, 1.0)
+
+    def mean_rate(sample_weight):
+        model = MultivariateProbit(
+            inner="xgboost", inner_params=FAST_XGB, dependence="pairwise", cv=None
+        ).fit(X, Y, sample_weight=sample_weight)
+        return model.predict_proba(X).marginal[:, 0].mean()
+
+    assert mean_rate(w) > mean_rate(None) + 0.1

@@ -1,8 +1,6 @@
 # Known gaps and roadmap
 
-Current version: 0.1.0 (alpha). This is a first, deliberately minimal
-implementation. The gaps below are known and stated rather than discovered
-later.
+The gaps below are known and stated rather than discovered later.
 
 ## Statistical
 
@@ -10,7 +8,11 @@ later.
 conditions on estimated margins, inverse-Hessian standard errors would be
 wrong; correct inference needs a Godambe (sandwich) information matrix or a
 bootstrap that resamples and refits both stages. Neither is implemented, and
-the margin fit does not report coefficient standard errors either. See
+the margin fit does not report coefficient standard errors either. The
+published treatment of this exact estimator says the same — see the two-stage
+composite likelihood entry in
+[studies/README.md](studies/README.md#external-references) — so the gap is a
+matter of implementation rather than of open methodology. See
 [ifm.md](ifm.md#inference).
 
 **Correlations are attenuated when margins are noisy.** Cross-fitting removes
@@ -18,7 +20,63 @@ the large upward bias from in-sample margins, but leaves a residual downward
 bias: an out-of-fold index still carries prediction error, and noise in a
 regressor attenuates the correlation measured through it. Read a fitted
 correlation as a floor on the true dependence. See
-[ifm.md](ifm.md#two-bias-directions-at-two-different-stages).
+[ifm.md](ifm.md#two-bias-directions-at-two-different-stages) for the effect and
+[Gap B](ifm.md#gap-b--a-real-bias) for the algebra.
+
+**Σ is conditional on what the margins can see.** Determinants of the outcome
+that the features or the functional form omit do not vanish; they join the
+latent error, and shared omitted variation is counted as dependence. `Σ` is
+therefore the correlation conditional on x, not the structural correlation of a
+fully specified model. This is not a bias that better estimation removes, and
+it cannot be diagnosed: a margin that is correctly scaled but incomplete and
+one that is over-dispersed but complete produce identical marginal data while
+implying different Σ. Widen the feature set if the structural quantity is what
+is wanted. See [Gap A](ifm.md#gap-a--the-estimand-moves) and [studies/margin-gaps.md](studies/margin-gaps.md).
+
+**`calibration_` is a scale check, not a calibration assessment.** It is the
+Cox calibration slope and nothing more: a slope of 1 rules out a first-order
+scale error, and says nothing about whether the classifier's probabilities are
+well calibrated in any fuller sense. It also cannot say *which* problem it has
+found — miscalibrated probabilities, a noisy index, and an index scored on its
+own training rows all move it. Checking probabilities properly means a
+reliability curve; repairing them means calibrating the classifier before it is
+handed over. Neither is this package's job. The [0.5, 2.0] warning band is a
+loose convenience with no calibrated error rate.
+
+**A quiet `calibration_` does not license trusting Σ.** The calibration slope
+detects estimation error in the margins, and is blind by construction to
+omitted signal — it reads exactly 1 while Σ moves a long way. It rules out one
+of the two mechanisms, and not the one that moves Σ furthest.
+
+**`calibration_` is uninformative for an in-sample GLM margin.** A probit
+margin fitted on the rows it is scored on satisfies `X'(y - p) = 0`, which
+contains `eta'(y - p) = 0` and `1'(y - p) = 0` — precisely the score equations
+of the calibrating probit at slope 1, intercept 0. So `cv=None` with the
+`linear` preset returns 1.00 to machine precision whatever the fit is worth.
+The number carries information only under cross-fitting, or for an inner model
+that is not itself a probit MLE. It is also computed unweighted, ignoring any
+`sample_weight` passed to `fit`.
+
+**Calibrating the margins is the caller's job.** Stage two holds the margins
+fixed and has no free parameter but the correlation, so error in `p̂` has
+nowhere to land except Σ. Nothing here repairs a probability, and calibration
+research and tooling live outside this package — scikit-learn's
+`CalibratedClassifierCV` is the usual instrument, and a reliability curve the
+usual diagnostic. Three notes specific to this estimator:
+
+- Prefer `method="sigmoid"`. It is scikit-learn's own recommendation below
+  roughly 1000 calibration samples, where isotonic is high-variance, and it
+  also avoids emitting exact 0s and 1s. Isotonic does emit them — about 1.8
+  percent of rows in a 5000-row check — and those become indices pinned at the
+  probability clip, so part of Σ ends up a function of an internal constant
+  rather than of the data.
+- Expect nested cross-validation. `CalibratedClassifierCV` cross-validates
+  internally and this estimator cross-fits on top, so the cost is `d` times
+  `cv` times the calibrator's own folds.
+- After calibrating, `calibration_` stops being an independent check on that
+  margin. Calibration optimises the calibration curve, and the slope measures
+  it, so it reads near 1 by construction — the same trap as the in-sample GLM
+  identity above.
 
 **Misspecified margins contaminate the dependence.** IFM's one-way information
 flow means anything the margins fail to explain surfaces in Σ, where it does
@@ -34,11 +92,24 @@ asymptotics are the composite ones, not the full-likelihood ones.
 
 ## Computational
 
-**Outcome count.** The deterministic orthant evaluator costs roughly
+**Outcome count.** The default `evaluator="quadrature"` costs roughly
 `n_quad ** (d - 2)`. Trivial at d = 3, noticeably heavier by d = 6-7,
-impractical well before d = 10. That regime needs a randomized or QMC
-evaluator, which is not implemented. `dependence="pairwise"` is the escape
-hatch and has no such scaling.
+impractical well before d = 10. Past that, `evaluator="scipy"` reaches any d by
+evaluating SciPy's multivariate normal CDF one row at a time. It is slow per
+row and randomised, so a `dependence="joint"` fit through it is not exactly
+reproducible. `evaluator="orthant"` is faster but platform-bound; see the next
+entry. GHK simulation is not implemented.
+
+`dependence="pairwise"` is the escape hatch for *fitting* and has no such
+scaling, but it does not help with *evaluation*. Joint queries on a pairwise
+fit at large d (`joint_proba`, `.all()`, `.any()`, `.none()`, `score`) still go
+through the chosen evaluator and pay its price. `predict_proba(X).marginal`,
+`decision_function`, `correlation_` and `sample` need no orthant integral.
+
+**`evaluator="orthant"` is narrowly built.** The compiled package is built
+for CPython 3.11 and 3.12 on x86-64 Linux. Every other platform and Python
+version gets an `ImportError` when it is selected. Without a key it is limited to d ≤ 3 at
+`resolution="low"`. It never falls back to another evaluator.
 
 **No analytic gradient for the Σ MLE.** `dependence="joint"` is derivative-free
 (Nelder-Mead) only. A closed-form gradient with respect to the correlation
@@ -49,16 +120,6 @@ range of d.
 appear in every cross-validation fold. A fold with a single-class training
 split will fail or produce a degenerate margin. Check outcome prevalence before
 raising `cv`.
-
-## Coverage
-
-**The `rf` preset is untested.** It is registered and it runs, but no test
-pins its behaviour. `linear` and `xgboost` are covered.
-
-**`decision_function` fallback.** When an inner model exposes neither `latent`
-nor `predict_proba`, its `decision_function` is used as the latent index
-directly, assuming it is already probit-scaled. Nothing verifies that
-assumption.
 
 ## Not implemented
 
@@ -72,6 +133,18 @@ likelihood at d ≥ 3. Until then the thin preset registry is the right shape.
 **Ordinal and count outcomes.** Binary only. The latent-threshold construction
 generalises to ordered categories with per-outcome cut points, but nothing in
 the current code does that.
+
+**Whether calibration improves Sigma is untested.** The argument for it is that
+calibration makes a margin honest with respect to the information its own score
+carries, which would convert estimation error ([Gap
+B](ifm.md#gap-b--a-real-bias), a bias) into omitted signal ([Gap
+A](ifm.md#gap-a--the-estimand-moves), a well-defined change of estimand) —
+`correlation_` would become interpretable rather than merely closer to
+something. That is an argument with an assumption in it, not a result: it
+requires the calibrator to be rich enough and genuinely out of fold. Nothing
+here measures it. The `rf` preset is the natural vehicle, since vote shares are
+the textbook uncalibrated probability. Tracked in
+[studies/margin-gaps.md](studies/margin-gaps.md).
 
 **Sparse input.** Dense arrays only; `X` is coerced with `numpy.asarray`.
 

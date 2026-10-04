@@ -4,39 +4,77 @@ build-backend = "hatchling.build"
 
 [project]
 name = "multivariate-probit"
-version = "0.1.0"
-description = "Multivariate probit models fitted by Inference Functions for Margins (IFM), with pluggable inner models."
+version = "0.2.2"
+description = "Joint probabilities for correlated binary outcomes: P(any), P(all), patterns and conditionals that agree. Any classifier per outcome; scikit-learn-style API."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [{ name = "Mark Shipman" }]
-keywords = ["multivariate probit", "copula", "IFM", "correlated binary outcomes", "xgboost"]
+keywords = [
+    "multivariate probit",
+    "correlated binary outcomes",
+    "multilabel",
+    "multi-output",
+    "joint probability",
+    "label dependence",
+    "co-occurrence",
+    "tetrachoric correlation",
+    "gaussian copula",
+    "inference functions for margins",
+    "multivariate normal cdf",
+    "xgboost",
+    "random forest",
+    "scikit-learn",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Healthcare Industry",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = ["numpy>=1.22", "scipy>=1.8"]
 
 [project.optional-dependencies]
 sklearn = ["scikit-learn>=1.1"]
 xgboost = ["xgboost>=1.7", "scikit-learn>=1.1"]
-all = ["scikit-learn>=1.1", "xgboost>=1.7"]
-dev = ["pytest>=7", "scikit-learn>=1.1", "xgboost>=1.7"]
+orthant = ["cryptography>=42"]
+all = ["scikit-learn>=1.1", "xgboost>=1.7", "cryptography>=42"]
+dev = ["pytest>=7", "scikit-learn>=1.1", "xgboost>=1.7", "cryptography>=42"]
 
 [project.urls]
-Homepage = "https://github.com/sign-of-fourier/multivariate-probit"
-Documentation = "https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/ifm.md"
+Homepage = "https://quantecarlo.com/multivariate-probit"
+Source = "https://github.com/sign-of-fourier/multivariate-probit"
+Documentation = "https://github.com/sign-of-fourier/multivariate-probit/tree/main/docs"
+Changelog = "https://github.com/sign-of-fourier/multivariate-probit/commits/main"
 Issues = "https://github.com/sign-of-fourier/multivariate-probit/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/multivariate_probit"]
+# The compiled orthant package; hatchling leaves binaries out by default.
+artifacts = [
+    "src/multivariate_probit/orthant/*.so",
+    "src/multivariate_probit/orthant/*.enc",
+]
+
+# hatch_build.py: a wheel carrying the binary gets a platform tag.
+[tool.hatch.build.targets.wheel.hooks.custom]
 
 [tool.hatch.build.targets.sdist]
-# Internal working notes; not useful to a package consumer.
-exclude = ["CLAUDE.md"]
+# Internal working notes are not useful to a package consumer. The orthant
+# binaries are platform-specific and ship in the platform wheel only, so a
+# wheel built from the sdist is pure Python with no orthant backend.
+exclude = [
+    "CLAUDE.md",
+    ".env",
+    "src/multivariate_probit/orthant/*.so",
+    "src/multivariate_probit/orthant/*.enc",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

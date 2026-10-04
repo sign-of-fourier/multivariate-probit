@@ -113,9 +113,16 @@ def free_from_corr(corr):
     return corr[np.triu_indices(corr.shape[0], k=1)]
 
 
-def joint_log_likelihood(corr, eta, Y, weights=None, n_quad=24):
-    """Full d-variate log-likelihood in ``corr``, with the margins held fixed."""
-    prob = np.clip(pattern_prob(eta, Y, corr, n_quad=n_quad), _LL_EPS, None)
+def joint_log_likelihood(
+    corr, eta, Y, weights=None, n_quad=24, evaluator="quadrature", resolution="high"
+):
+    """Full d-variate log-likelihood in ``corr``, with the margins held fixed.
+
+    ``evaluator``, ``n_quad`` and ``resolution`` select and tune the orthant
+    backend; see :func:`~multivariate_probit._mvn.lower_orthant`.
+    """
+    prob = pattern_prob(eta, Y, corr, n_quad=n_quad, evaluator=evaluator, resolution=resolution)
+    prob = np.clip(prob, _LL_EPS, None)
     ll = np.log(prob)
     if weights is None:
         return float(np.sum(ll))
@@ -131,6 +138,8 @@ def joint_correlation(
     init=None,
     min_eigenvalue=1e-8,
     options=None,
+    evaluator="quadrature",
+    resolution="high",
 ):
     """Estimate the latent correlation matrix by full-information ML in ``R``.
 
@@ -140,6 +149,9 @@ def joint_correlation(
     no convenient closed-form gradient here -- and each evaluation costs an
     orthant integral per observation, so the price grows quickly with ``d``.
     For many outcomes prefer :func:`pairwise_correlation`.
+
+    With ``evaluator="scipy"`` the objective is randomised, so repeated fits
+    need not agree exactly and the simplex can stall on noise.
 
     Returns
     -------
@@ -168,7 +180,9 @@ def joint_correlation(
         corr = corr_from_free(np.clip(free, -RHO_MAX, RHO_MAX), d)
         if np.linalg.eigvalsh(corr).min() <= min_eigenvalue:
             return 1e10  # not positive definite -- push the optimizer away
-        return -joint_log_likelihood(corr, eta, Y, weights=weights, n_quad=n_quad)
+        return -joint_log_likelihood(
+            corr, eta, Y, weights=weights, n_quad=n_quad, evaluator=evaluator, resolution=resolution
+        )
 
     result = minimize(neg_ll, free_from_corr(start), method=optimizer, options=options)
     corr = corr_from_free(np.clip(result.x, -RHO_MAX, RHO_MAX), d)

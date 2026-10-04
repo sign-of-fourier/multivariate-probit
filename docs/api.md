@@ -15,6 +15,8 @@ MultivariateProbit(
     optimizer="Nelder-Mead",
     project_correlation=True,
     random_state=None,
+    evaluator="quadrature",
+    resolution="high",
 )
 ```
 
@@ -26,15 +28,58 @@ MultivariateProbit(
 | `inner_params` | `None` | Keyword arguments forwarded to the preset factory. Ignored when `inner` is already an instance. |
 | `dependence` | `"joint"` | `"joint"` maximises the full d-variate likelihood for Σ; `"pairwise"` maximises each pair's bivariate likelihood (composite likelihood, far cheaper). |
 | `cv` | `5` | Folds used to cross-fit the latent indices that stage two consumes. `None` skips cross-fitting — see the warning below. |
-| `n_quad` | `24` | Gauss-Legendre order for the orthant evaluator. Lower it if fitting with many outcomes gets slow. |
+| `n_quad` | `24` | Gauss-Legendre order for `evaluator="quadrature"`. Lower it if fitting with many outcomes gets slow. |
 | `optimizer` | `"Nelder-Mead"` | Passed to `scipy.optimize.minimize` for `dependence="joint"`. Derivative-free by design. |
 | `project_correlation` | `True` | Project a pairwise estimate onto the nearest positive-definite correlation matrix. No effect when `dependence="joint"`. |
 | `random_state` | `None` | Controls the cross-fitting split and `sample`. |
+| `evaluator` | `"quadrature"` | Backend for the orthant probabilities behind `dependence="joint"` and every joint query: `"quadrature"`, `"scipy"` or `"orthant"`. See [Evaluators](#evaluators). |
+| `resolution` | `"high"` | Passed to `evaluator="orthant"`; ignored otherwise. |
+
+> **Reading `calibration_`.** This is the Cox calibration slope, a deliberately
+> simple scale check: a probit of each outcome on its own fitted index. A slope
+> near 1 is expected. It is *not* a calibration assessment — a slope of 1 rules
+> out a first-order scale error and nothing more, and a departure from 1 has
+> several possible causes: miscalibrated probabilities from the classifier, a
+> correctly calibrated but noisy index, or an index scored on the rows it was
+> fitted on. For a real assessment of a classifier's probabilities use a
+> reliability curve; calibrating the margins is the caller's job, not the
+> estimator's, and `CalibratedClassifierCV` is the usual way to do it.
+>
+> Slopes outside roughly [0.5, 2.0] emit a `UserWarning` and never raise. The
+> band is a loose convenience, not a test with a calibrated error rate — a
+> slope inside it is not a clean bill of health, and one outside it is a
+> suggestion to look, not a verdict on the fit. A slope that is not identified
+> — a constant or non-finite index, or a single-class outcome — is `nan` and
+> stays silent. A slope near 1 is not evidence that Σ is trustworthy: the check
+> is blind to omitted signal by construction. See
+> [ifm.md](ifm.md#the-calibration-slope-sees-exactly-one-of-them) and
+> [limitations.md](limitations.md).
 
 > **`cv=None` is not a neutral speed-up.** In-sample margins drive every fitted
 > correlation toward +1. It is defensible for the linear default and reckless
 > for anything that can overfit. See
 > [ifm.md](ifm.md#why-cross-fitting-is-required).
+
+### Evaluators
+
+The speed/accuracy trade-off is the caller's. None of the backends falls back to
+another: one that cannot run as asked raises. All results are clipped to
+[0, 1]. `dependence="pairwise"` needs only bivariate probabilities, which are
+always computed in closed form, so it is unaffected during fitting; joint
+queries on a pairwise fit still use the chosen backend.
+
+| `evaluator` | What it is | Trade-off |
+| --- | --- | --- |
+| `"quadrature"` | Genz's recursive conditioning with a fixed Gauss-Legendre rule of order `n_quad` (see [implementation.md](implementation.md)). | Deterministic and accurate. Cost grows as `n_quad ** (d - 2)`, so it becomes impractical well before d = 10. |
+| `"scipy"` | `scipy.stats.multivariate_normal.cdf`, one row at a time. | Reaches any d, but is slow per row and randomised: a `dependence="joint"` fit is not exactly reproducible, and its noisy objective can stall the simplex. |
+| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.11 and 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. Accuracy and speed against GHK and SciPy: [studies/ghk.md](studies/ghk.md). |
+
+For test sets too large for one machine, the same evaluator runs as a hosted
+GPU service, `quantecarlo.orthant_cdf`: about a second per million rows at
+d = 20, most of it upload. For a fitted model, `orthant_cdf(model.transform(X),
+model.correlation_, signs=2 * y - 1)` is `P(Y = y | x)` for one pattern `y`; see
+the
+[quantecarlo README](https://github.com/sign-of-fourier/quantecarlo#orthant-probabilities-orthant_cdf).
 
 ### Attributes
 
@@ -43,6 +88,7 @@ MultivariateProbit(
 | `inner_models_` | list, length d | The fitted margins, one per outcome. |
 | `correlation_` | (d, d) | The fitted Σ. |
 | `eta_` | (n, d) | The (cross-fitted) latent indices stage two was fitted on. |
+| `calibration_` | (d, 2) | Intercept and slope of a probit of each outcome on its own fitted index — the calibration slope. See the note below. |
 | `nll_` | float | Negative log-likelihood at the end of the dependence fit. Joint and pairwise fits optimise different objectives, so the values are not comparable across settings. |
 | `optimize_result_` | OptimizeResult or None | The SciPy result for `dependence="joint"`. |
 | `n_outcomes_`, `n_features_in_` | int | |
@@ -51,7 +97,7 @@ MultivariateProbit(
 
 | Method | Returns | Notes |
 | --- | --- | --- |
-| `fit(X, Y, sample_weight=None)` | self | `Y` is (n, d) and strictly 0/1. Weights are forwarded to margins that accept them. |
+| `fit(X, Y, sample_weight=None)` | self | `Y` is (n, d) and strictly 0/1. Weights are forwarded to every margin, including the wrapped estimator inside `ProbitCalibrated`; a margin whose `fit` takes no `sample_weight` is fitted unweighted with a warning. |
 | `decision_function(X)` / `transform(X)` | (n, d) | Latent indices η on (-∞, ∞). |
 | `fit_transform(X, Y)` | (n, d) | |
 | `predict_proba(X)` | `MultivariateProbitProba` | See below. |
@@ -78,9 +124,19 @@ probabilities — `np.asarray(proba)`, `proba[i, j]`, `proba.shape`, `len(proba)
 | `.all(outcomes=None)` | (n,) | `P(every selected outcome = 1 | x)`. |
 | `.any(outcomes=None)` | (n,) | `P(at least one selected outcome = 1 | x)`. |
 | `.none(outcomes=None)` | (n,) | `P(no selected outcome = 1 | x)`. |
+| `.conditional(event, given)` | (n,) | `P(event | given, x)`. Both map outcome index to 0/1; a value may be an (n,) array, so each row can be conditioned on its own observed outcomes. An int `event` means `{event: 1}`. |
 
 `outcomes` takes a list of column indices, so "do these three co-occur" is a
 one-liner.
+
+```python
+proba.conditional(2, given={0: 1, 1: 0})        # P(Y_2 = 1 | Y_0 = 1, Y_1 = 0, x)
+proba.conditional({2: 1}, given={0: Y_test[:, 0]})  # condition each row on its observed Y_0
+```
+
+`conditional` computes `P(given)` as the sum over all values of the event
+outcomes, so it costs `2 ** len(event)` orthant evaluations and the
+conditionals of one event sum to 1 exactly. A row where `P(given) = 0` is NaN.
 
 ## Inner models
 
@@ -89,14 +145,26 @@ one-liner.
 An inner model is anything with `fit(X, y)` and `latent(X) -> (n,)`, where
 `latent` returns a real-valued index on the probit scale.
 
-Estimators that do not expose `latent` are wrapped automatically by
-`ProbitCalibrated`, which supplies it:
+Estimators that do not expose `latent` must expose `predict_proba`, and are
+wrapped automatically by `ProbitCalibrated`, whose `latent(X)` is `Φ⁻¹(p̂)`
+clipped away from 0 and 1. Anything else is a `TypeError` at coercion, before
+any margin is fitted: an uncalibrated `decision_function` score is on an
+arbitrary scale, so `Φ` applied to it is not a probability and no diagnostic
+can detect the mismatch. Wrap such an estimator in a calibrator first
+(`CalibratedClassifierCV`, or `SVC(probability=True)`).
 
-- if the estimator has `predict_proba`, `latent(X)` is `Φ⁻¹(p̂)`, clipped away
-  from 0 and 1;
-- otherwise, if it has `decision_function`, that score is used as the index
-  as-is — which assumes it is already probit-scaled. Check that assumption
-  before relying on it.
+The probability itself need not be any good. Inverting the link is exact for a
+calibrated `p̂`, and a miscalibrated one is reported by `calibration_` rather
+than repaired.
+
+`predict_proba` is an interface requirement, not a quality bar, and the gap
+between the two can be large. A fully grown `DecisionTreeClassifier` satisfies
+the contract and emits only exact 0s and 1s, so every index is pinned at the
+clip and Σ is fitted from thresholds that carry no information — on a synthetic
+bivariate probit with true ρ = 0.5 it returned 0.914, with calibration slopes
+of 0.11. The same tree at `min_samples_leaf=50` returned 0.362. Neither is
+right, and the contract cannot tell them apart; `calibration_` flagged the
+first and not the second.
 
 ### Presets
 

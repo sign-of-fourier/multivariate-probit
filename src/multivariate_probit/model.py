@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 
 import numpy as np
 from scipy.stats import norm
 
 from ._corr import is_positive_definite
-from ._mvn import pattern_prob
+from ._mvn import EVALUATORS, pattern_prob
 from .ifm import joint_correlation, pair_log_likelihood, pairwise_correlation
-from .inner import as_inner
+from .inner import ProbitCalibrated, as_inner
+from .linear import ProbitRegressor
 from .results import MultivariateProbitProba
 
 __all__ = ["MultivariateProbit"]
 
 _LL_EPS = 1e-12
+
+# Slopes outside this band warn. Deliberately loose: the clinical literature
+# often flags below 0.8, which is noisier than is useful for a warning that
+# cannot be turned off per-outcome.
+_CALIBRATION_BAND = (0.5, 2.0)
 
 
 def _kfold_indices(n, n_splits, rng):
@@ -25,6 +32,24 @@ def _kfold_indices(n, n_splits, rng):
         mask = np.zeros(n, dtype=bool)
         mask[fold] = True
         yield ~mask, mask
+
+
+def _calibration_slope(eta, y):
+    """Intercept and slope of a probit of ``y`` on a single index ``eta``.
+
+    This is the *calibration slope* of prognostic-model validation (Cox): 1.0
+    means the index carries exactly the information its own scale claims.
+    Returns ``(nan, nan)`` for a degenerate input -- a constant or non-finite
+    index, or a single-class outcome -- where the slope is not identified.
+    """
+    eta = np.asarray(eta, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    if not np.all(np.isfinite(eta)) or np.ptp(eta) == 0.0:
+        return np.nan, np.nan
+    if np.unique(y).size < 2:
+        return np.nan, np.nan
+    fit = ProbitRegressor(fit_intercept=True).fit(eta[:, None], y)
+    return float(fit.intercept_), float(fit.coef_[0])
 
 
 def _require_positive_definite(corr):
@@ -50,6 +75,10 @@ def _require_positive_definite(corr):
 
 
 def _supports_sample_weight(estimator):
+    # The wrapper always accepts weights; whether they mean anything depends on
+    # what it wraps.
+    if isinstance(estimator, ProbitCalibrated):
+        estimator = estimator.estimator
     try:
         return "sample_weight" in inspect.signature(estimator.fit).parameters
     except (TypeError, ValueError):  # pragma: no cover - exotic callables
@@ -107,9 +136,29 @@ class MultivariateProbit:
         absorbed part of the noise, which attenuates the estimated
         correlations toward zero. ``None`` skips cross-fitting -- reasonable
         for the linear default, risky for anything that can overfit.
+    evaluator : {"quadrature", "scipy", "orthant"}, default="quadrature"
+        Backend for the orthant probabilities behind ``dependence="joint"``
+        and every joint query. The speed/accuracy trade-off is the caller's:
+
+        - ``"quadrature"``: Genz's recursive conditioning with a fixed
+          Gauss-Legendre rule. Deterministic and accurate; cost grows as
+          ``n_quad ** (d - 2)``.
+        - ``"scipy"``: ``scipy.stats.multivariate_normal.cdf``, randomised
+          quasi-Monte Carlo, one row at a time. Slow per row and not
+          deterministic, but reaches any ``d``.
+        - ``"orthant"``: the optional compiled package (CPython 3.11/3.12, x86-64
+          Linux; ``pip install multivariate-probit[orthant]``). Without a key
+          it accepts ``d <= 3`` and ``resolution="low"`` only; outside that,
+          and on any platform it was not built for, it raises.
+
+        Results are clipped to [0, 1]. No backend ever falls back to another.
+        ``dependence="pairwise"`` needs only bivariate probabilities, which
+        are always computed in closed form, so it ignores this setting.
     n_quad : int, default=24
-        Gauss-Legendre order for the orthant-probability evaluator. Lower it
-        if fitting with many outcomes gets slow.
+        Gauss-Legendre order for ``evaluator="quadrature"``. Lower it if
+        fitting with many outcomes gets slow.
+    resolution : {"high", "low"}, default="high"
+        Passed to ``evaluator="orthant"``; ignored otherwise.
     optimizer : str, default="Nelder-Mead"
         Passed to ``scipy.optimize.minimize`` for ``dependence="joint"``.
         Derivative-free by design: the orthant likelihood has no convenient
@@ -127,6 +176,20 @@ class MultivariateProbit:
     correlation_ : ndarray of shape (d, d)
     eta_ : ndarray of shape (n, d)
         The (cross-fitted) latent indices stage two was fitted on.
+    calibration_ : ndarray of shape (d, 2)
+        Intercept and slope of a probit of each outcome on its own fitted
+        index: the Cox calibration slope, a scale check on the margins stage
+        two consumed. A slope near 1 is expected. It is deliberately simple
+        and is not a calibration assessment -- a slope of 1 rules out a
+        first-order scale error and nothing more, and a departure from 1 has
+        several possible causes (miscalibrated probabilities, a noisy index,
+        or an index scored on its own training rows). For an actual
+        assessment of a classifier's probabilities use a reliability curve;
+        for repair, calibrate the classifier before handing it over. A slope
+        near 1 does *not* license trusting Sigma, which is blind to omitted
+        signal by construction -- see ``docs/limitations.md``. ``nan`` where
+        the slope is not identified. Computed unweighted, ignoring
+        ``sample_weight``.
     nll_ : float
         Negative log-likelihood at the end of the dependence fit.
     n_outcomes_ : int
@@ -143,12 +206,16 @@ class MultivariateProbit:
         optimizer="Nelder-Mead",
         project_correlation=True,
         random_state=None,
+        evaluator="quadrature",
+        resolution="high",
     ):
         self.inner = inner
         self.inner_params = inner_params
         self.dependence = dependence
         self.cv = cv
+        self.evaluator = evaluator
         self.n_quad = n_quad
+        self.resolution = resolution
         self.optimizer = optimizer
         self.project_correlation = project_correlation
         self.random_state = random_state
@@ -166,6 +233,8 @@ class MultivariateProbit:
             raise ValueError(f"X has {X.shape[0]} rows but Y has {Y.shape[0]}")
         if not np.isin(np.unique(Y), (0, 1)).all():
             raise ValueError("Y must contain only 0/1 values")
+        if self.evaluator not in EVALUATORS:
+            raise ValueError(f"evaluator must be one of {EVALUATORS}; got {self.evaluator!r}")
         Y = Y.astype(float)
 
         n, d = Y.shape
@@ -191,6 +260,7 @@ class MultivariateProbit:
         else:
             eta = self._oof_decision_function(X, Y, specs, params, sample_weight, rng)
         self.eta_ = eta
+        self.calibration_ = self._calibrate(eta, Y)
 
         # ---- stage 2: dependence
         if self.dependence == "joint":
@@ -200,6 +270,8 @@ class MultivariateProbit:
                 weights=sample_weight,
                 n_quad=self.n_quad,
                 optimizer=self.optimizer,
+                evaluator=self.evaluator,
+                resolution=self.resolution,
             )
             self.nll_ = None if self.optimize_result_ is None else float(self.optimize_result_.fun)
         elif self.dependence == "pairwise":
@@ -224,10 +296,45 @@ class MultivariateProbit:
         _require_positive_definite(self.correlation_)
         return self
 
+    def _calibrate(self, eta, Y):
+        calibration = np.array(
+            [_calibration_slope(eta[:, j], Y[:, j]) for j in range(Y.shape[1])],
+            dtype=float,
+        ).reshape(-1, 2)
+
+        lo, hi = _CALIBRATION_BAND
+        slopes = calibration[:, 1]
+        off = np.flatnonzero(np.isfinite(slopes) & ((slopes < lo) | (slopes > hi)))
+        if off.size:
+            detail = ", ".join(f"outcome {j} slope {slopes[j]:.2f}" for j in off)
+            warnings.warn(
+                f"margin calibration slope outside [{lo}, {hi}] ({detail}); a "
+                "slope near 1 is expected. This is the Cox calibration slope, a "
+                "deliberately simple scale check on the fitted indices -- not a "
+                "full calibration assessment, and not a sign the fit is invalid. "
+                "It suggests the margins' probabilities may be worth calibrating "
+                "(scikit-learn's CalibratedClassifierCV, for instance) before "
+                "reading correlation_ closely, since stage two has no free "
+                "parameter but the correlation to absorb margin error with. A "
+                "slope far above 1 usually means the index was scored on rows it "
+                "was fitted on, which cv= addresses. See calibration_ and "
+                "docs/limitations.md.",
+                UserWarning,
+                stacklevel=3,
+            )
+        return calibration
+
     def _fit_margin(self, model, X, y, sample_weight):
-        if sample_weight is not None and _supports_sample_weight(model):
+        if sample_weight is None:
+            model.fit(X, y)
+        elif _supports_sample_weight(model):
             model.fit(X, y, sample_weight=sample_weight)
         else:
+            warnings.warn(
+                f"{model!r} does not accept sample_weight, so this margin is fitted "
+                "unweighted; the correlation stage still uses the weights.",
+                stacklevel=3,
+            )
             model.fit(X, y)
         return model
 
@@ -284,7 +391,11 @@ class MultivariateProbit:
         ``.none()``.
         """
         return MultivariateProbitProba(
-            self.decision_function(X), self.correlation_, n_quad=self.n_quad
+            self.decision_function(X),
+            self.correlation_,
+            n_quad=self.n_quad,
+            evaluator=self.evaluator,
+            resolution=self.resolution,
         )
 
     def predict_marginal_proba(self, X):
@@ -309,7 +420,14 @@ class MultivariateProbit:
         Y = np.asarray(Y, dtype=float)
         if Y.ndim == 1:
             Y = Y[None, :]
-        return pattern_prob(eta, Y, self.correlation_, n_quad=self.n_quad)
+        return pattern_prob(
+            eta,
+            Y,
+            self.correlation_,
+            n_quad=self.n_quad,
+            evaluator=self.evaluator,
+            resolution=self.resolution,
+        )
 
     def joint_log_proba(self, X, Y):
         return np.log(np.clip(self.joint_proba(X, Y), _LL_EPS, None))
@@ -344,7 +462,9 @@ class MultivariateProbit:
             "inner_params": self.inner_params,
             "dependence": self.dependence,
             "cv": self.cv,
+            "evaluator": self.evaluator,
             "n_quad": self.n_quad,
+            "resolution": self.resolution,
             "optimizer": self.optimizer,
             "project_correlation": self.project_correlation,
             "random_state": self.random_state,

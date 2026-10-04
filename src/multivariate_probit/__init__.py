@@ -15,7 +15,7 @@ scikit-learn-shaped via the adapter.
     >>> model.correlation_
 """
 
-from ._mvn import bvn_cdf, mvn_orthant, orthant_prob, pattern_prob
+from ._mvn import EVALUATORS, bvn_cdf, lower_orthant, mvn_orthant, orthant_prob, pattern_prob
 from .ifm import (
     joint_correlation,
     joint_log_likelihood,
@@ -33,7 +33,7 @@ from .linear import ProbitRegressor
 from .model import MultivariateProbit
 from .results import MultivariateProbitProba
 
-__version__ = "0.1.0"
+__version__ = "0.2.2"
 
 __all__ = [
     "MultivariateProbit",
@@ -50,6 +50,8 @@ __all__ = [
     "pair_log_likelihood",
     "bvn_cdf",
     "mvn_orthant",
+    "lower_orthant",
+    "EVALUATORS",
     "orthant_prob",
     "pattern_prob",
     "__version__",
