@@ -6,8 +6,8 @@ authors:
   - family-names: Shipman
     given-names: Mark
     orcid: "https://orcid.org/0009-0008-7193-1263"
-version: 0.2.2
-# TODO(Mark): add date-released (YYYY-MM-DD) when 0.2.2 is published.
+version: 0.2.3
+# TODO(Mark): add date-released (YYYY-MM-DD) when 0.2.3 is published.
 license: MIT
 repository-code: "https://github.com/sign-of-fourier/multivariate-probit"
 url: "https://quantecarlo.com/multivariate-probit"
