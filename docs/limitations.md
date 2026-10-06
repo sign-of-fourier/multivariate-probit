@@ -4,7 +4,8 @@ The gaps below are known and stated rather than discovered later.
 
 ## Statistical
 
-**No standard errors.** `correlation_` is a point estimate. Because stage two
+**No standard errors from IFM.** (`fitter="modal"` reports them, for linear
+margins; see [fiml.md](fiml.md).) Under IFM, `correlation_` is a point estimate. Because stage two
 conditions on estimated margins, inverse-Hessian standard errors would be
 wrong; correct inference needs a Godambe (sandwich) information matrix or a
 bootstrap that resamples and refits both stages. Neither is implemented, and

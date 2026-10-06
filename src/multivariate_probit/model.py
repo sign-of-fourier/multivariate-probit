@@ -1,4 +1,4 @@
-"""The estimator: a multivariate probit fitted by IFM."""
+"""The estimator: a multivariate probit fitted by IFM, or by full ML on a GPU service."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 from scipy.stats import norm
 
+from . import _remote
 from ._corr import is_positive_definite
 from ._mvn import EVALUATORS, pattern_prob
 from .ifm import joint_correlation, pair_log_likelihood, pairwise_correlation
@@ -18,6 +19,8 @@ from .results import MultivariateProbitProba
 __all__ = ["MultivariateProbit"]
 
 _LL_EPS = 1e-12
+
+FITTERS = ("ifm", "modal")
 
 # Slopes outside this band warn. Deliberately loose: the clinical literature
 # often flags below 0.8, which is noisier than is useful for a warning that
@@ -114,6 +117,11 @@ class MultivariateProbit:
 
     See ``docs/ifm.md`` for the derivation and the trade-offs.
 
+    ``fitter="modal"`` is the alternative: full-information maximum likelihood,
+    every margin and ``R`` estimated jointly, on a hosted GPU service. It is
+    limited to linear margins, sends X, Y and the weights to the service, and
+    returns standard errors. See ``docs/fiml.md``.
+
     Parameters
     ----------
     inner : str, estimator, callable or list, default="linear"
@@ -167,7 +175,20 @@ class MultivariateProbit:
         Project a pairwise estimate onto the nearest positive-definite
         correlation matrix (pairwise fits need not be jointly coherent).
     random_state : int or Generator, optional
-        Controls the cross-fitting split and :meth:`sample`.
+        Controls the cross-fitting split and :meth:`sample`. With
+        ``fitter="modal"``, an int also seeds the Sobol draws (otherwise 0, so
+        remote fits are reproducible by default).
+    fitter : {"ifm", "modal"}, default="ifm"
+        ``"ifm"`` is the two-stage fit described above, run locally.
+        ``"modal"`` is full maximum likelihood on the hosted GPU service:
+        linear margins only (``inner="linear"``; ``inner_params`` may set
+        ``alpha``), ``R`` and every margin fitted jointly by a GHK simulated
+        likelihood with fixed scrambled Sobol draws. ``dependence``, ``cv``,
+        ``optimizer`` and ``project_correlation`` do not apply to it. X, Y and
+        ``sample_weight`` are uploaded; only parameters come back, and every
+        prediction afterwards runs locally on ``evaluator``.
+    n_draws : int, default=512
+        Sobol draws per row for ``fitter="modal"``; ignored otherwise.
 
     Attributes
     ----------
@@ -191,7 +212,17 @@ class MultivariateProbit:
         the slope is not identified. Computed unweighted, ignoring
         ``sample_weight``.
     nll_ : float
-        Negative log-likelihood at the end of the dependence fit.
+        Negative log-likelihood at the end of the dependence fit (for
+        ``fitter="modal"``, the simulated joint negative log-likelihood).
+    stderr_, stderr_robust_ : dict, ``fitter="modal"`` only
+        Standard errors keyed ``"coef"`` (d, n_features), ``"intercept"`` (d,)
+        and ``"correlation"`` (d, d), from the inverse Hessian and from the
+        sandwich (robust; the one to use with ``sample_weight``).
+    cov_params_, cov_params_robust_ : ndarray, ``fitter="modal"`` only
+        The matching covariance matrices, in the order of ``param_names_``.
+    param_names_ : list of str, ``fitter="modal"`` only
+    fit_result_ : dict, ``fitter="modal"`` only
+        ``n_iter``, ``converged``, ``grad_max``, ``n_draws``, ``seed``.
     n_outcomes_ : int
     n_features_in_ : int
     """
@@ -208,6 +239,8 @@ class MultivariateProbit:
         random_state=None,
         evaluator="quadrature",
         resolution="high",
+        fitter="ifm",
+        n_draws=512,
     ):
         self.inner = inner
         self.inner_params = inner_params
@@ -219,6 +252,8 @@ class MultivariateProbit:
         self.optimizer = optimizer
         self.project_correlation = project_correlation
         self.random_state = random_state
+        self.fitter = fitter
+        self.n_draws = n_draws
 
     # ------------------------------------------------------------------ fit
 
@@ -235,11 +270,15 @@ class MultivariateProbit:
             raise ValueError("Y must contain only 0/1 values")
         if self.evaluator not in EVALUATORS:
             raise ValueError(f"evaluator must be one of {EVALUATORS}; got {self.evaluator!r}")
+        if self.fitter not in FITTERS:
+            raise ValueError(f"fitter must be one of {FITTERS}; got {self.fitter!r}")
         Y = Y.astype(float)
 
         n, d = Y.shape
         self.n_features_in_ = X.shape[1]
         self.n_outcomes_ = d
+        if self.fitter == "modal":
+            return self._fit_modal(X, Y, sample_weight)
         rng = np.random.default_rng(self.random_state)
         params = dict(self.inner_params or {})
 
@@ -293,6 +332,87 @@ class MultivariateProbit:
                 f"dependence must be 'joint' or 'pairwise'; got {self.dependence!r}"
             )
 
+        _require_positive_definite(self.correlation_)
+        return self
+
+    def _fit_modal(self, X, Y, sample_weight):
+        if not (isinstance(self.inner, str) and self.inner == "linear"):
+            raise ValueError(
+                'fitter="modal" fits linear margins only; use inner="linear" '
+                '(or fitter="ifm" for other inner models)'
+            )
+        params = dict(self.inner_params or {})
+        alpha = float(params.pop("alpha", 1e-6))
+        if params.pop("fit_intercept", True) is not True or params:
+            raise ValueError(
+                'fitter="modal" accepts only inner_params={"alpha": ...}; '
+                "the intercept is always fitted"
+            )
+        if isinstance(self.random_state, (int, np.integer)):
+            seed = int(self.random_state)
+        else:
+            seed = 0
+        out = _remote.fit_remote(
+            X, Y, sample_weight, n_draws=int(self.n_draws), seed=seed, alpha=alpha, se=True
+        )
+
+        n, d = Y.shape
+        p = X.shape[1]
+        coef = np.asarray(out["coef"], dtype=float).reshape(d, p)
+        intercept = np.asarray(out["intercept"], dtype=float).reshape(d)
+        self.inner_models_ = []
+        for j in range(d):
+            model = ProbitRegressor(alpha=alpha)
+            model.coef_ = coef[j].copy()
+            model.intercept_ = float(intercept[j])
+            model.classes_ = np.array([0, 1])
+            model.n_iter_ = int(out["n_iter"])
+            self.inner_models_.append(model)
+        corr = np.asarray(out["corr"], dtype=float).reshape(d, d)
+        self.correlation_ = (corr + corr.T) / 2.0
+        np.fill_diagonal(self.correlation_, 1.0)
+        self.nll_ = float(out["nll"])
+        self.optimize_result_ = None
+        self.fit_result_ = {
+            "n_iter": int(out["n_iter"]),
+            "converged": bool(out["converged"]),
+            "grad_max": float(out["grad_max"]),
+            "n_draws": int(out["n_draws"]),
+            "seed": int(out["seed"]),
+        }
+
+        iu = np.triu_indices(d, 1)
+        self.param_names_ = (
+            [f"coef[{j},{k}]" for j in range(d) for k in range(p)]
+            + [f"intercept[{j}]" for j in range(d)]
+            + [f"rho[{j},{k}]" for j, k in zip(*iu)]
+        )
+
+        def unpack(se):
+            se = np.asarray(se, dtype=float)
+            rho = np.zeros((d, d))
+            rho[iu] = se[d * p + d :]
+            return {
+                "coef": se[: d * p].reshape(d, p),
+                "intercept": se[d * p : d * p + d],
+                "correlation": rho + rho.T,
+            }
+
+        self.stderr_ = unpack(out["se_hessian"])
+        self.stderr_robust_ = unpack(out["se_sandwich"])
+        self.cov_params_ = np.asarray(out["cov_hessian"], dtype=float)
+        self.cov_params_robust_ = np.asarray(out["cov_sandwich"], dtype=float)
+
+        if not self.fit_result_["converged"]:
+            warnings.warn(
+                f"the remote fit stopped at its iteration limit "
+                f"(max |gradient| {self.fit_result_['grad_max']:.2e}); the estimates "
+                "may not be at the optimum",
+                UserWarning,
+                stacklevel=3,
+            )
+        self.eta_ = self.decision_function(X)
+        self.calibration_ = self._calibrate(self.eta_, Y)
         _require_positive_definite(self.correlation_)
         return self
 
@@ -468,6 +588,8 @@ class MultivariateProbit:
             "optimizer": self.optimizer,
             "project_correlation": self.project_correlation,
             "random_state": self.random_state,
+            "fitter": self.fitter,
+            "n_draws": self.n_draws,
         }
 
     def set_params(self, **params):
@@ -481,5 +603,5 @@ class MultivariateProbit:
     def __repr__(self):
         return (
             f"MultivariateProbit(inner={self.inner!r}, dependence={self.dependence!r}, "
-            f"cv={self.cv!r})"
+            f"cv={self.cv!r}, fitter={self.fitter!r})"
         )

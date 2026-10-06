@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "multivariate-probit"
-version = "0.2.3"
+version = "0.3.0"
 description = "Joint probabilities for correlated binary outcomes: P(any), P(all), patterns and conditionals that agree. Any classifier per outcome; scikit-learn-style API."
 readme = "README.md"
 license = { file = "LICENSE" }

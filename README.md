@@ -37,7 +37,7 @@ Using this on a real problem?
 - Your **multilabel** or **multi-output** model treats labels as independent,
   and you need the **joint probability** of a label combination.
 - You've used R `mvProbit` or Stata `mvprobit` and want **multivariate probit in
-  Python** for prediction at scale (no standard errors yet; see below).
+  Python**, with standard errors from a full-likelihood fit or prediction at scale.
 - You want to **combine several fraud or risk model scores** into one
   probability that "any of these happened."
 - You need **co-occurrence** or **label dependence** expressed as one
@@ -65,6 +65,9 @@ features it is the tetrachoric correlation conditional on x. Fitting is
 two-stage **Inference Functions for Margins** (IFM): each margin is fitted
 alone and cross-fitted, then Σ is estimated by maximum likelihood with the
 margins held fixed ([docs/ifm.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/ifm.md)).
+For linear margins, `fitter="modal"` is the alternative: full maximum
+likelihood, all margins and Σ at once, on a hosted GPU, with standard errors
+([docs/fiml.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/fiml.md)).
 
 ## Why not write it yourself
 
@@ -102,8 +105,11 @@ wrong; each is handled here and documented.
   explicit and readable in `correlation_`, but each margin is as much a black
   box as the classifier inside it. SHAP is the tool for explaining a single
   black-box model; this package does not make one explainable.
-- **No standard errors yet.** Coefficients and Σ are point estimates
-  ([limitations](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/limitations.md)).
+- **Standard errors with `fitter="modal"` only.** The IFM fit gives point
+  estimates
+  ([limitations](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/limitations.md));
+  the full-likelihood fit returns `stderr_` and `cov_params_` for the
+  coefficients and Σ.
 
 ## Bring your own model, or use ours
 
@@ -150,8 +156,12 @@ Benchmarks against other tools: [docs/benchmarks.md](https://github.com/sign-of-
 
 ## Where your data goes
 
-Nowhere. Fitting and every `evaluator` run on your machine; the package makes
-no network calls, and the `"orthant"` key is checked offline.
+Nowhere, by default. Fitting and every `evaluator` run on your machine; the
+package makes no network calls, and the `"orthant"` key is checked offline.
+
+The exception is opt-in: `fitter="modal"` uploads X, Y and `sample_weight` to
+a GPU service for the full-likelihood fit and gets parameters back. Everything
+after `fit` runs locally.
 
 The one hosted path is a separate package you call yourself:
 [`quantecarlo.orthant_cdf`](https://github.com/sign-of-fourier/quantecarlo#orthant-probabilities-orthant_cdf),
@@ -188,6 +198,7 @@ runnable example on synthetic data:
 ## Documentation
 
 - [docs/ifm.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/ifm.md): the estimation algorithm, and why IFM
+- [docs/fiml.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/fiml.md): the full-likelihood GPU fit (`fitter="modal"`), with standard errors
 - [docs/api.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/api.md): parameters, evaluators, the inner-model contract
 - [docs/implementation.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/implementation.md): what is hand-rolled, numerical accuracy
 - [docs/limitations.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/limitations.md): known gaps

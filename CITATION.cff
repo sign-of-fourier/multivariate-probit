@@ -6,7 +6,7 @@ authors:
   - family-names: Shipman
     given-names: Mark
     orcid: "https://orcid.org/0009-0008-7193-1263"
-version: 0.2.3
+version: 0.3.0
 date-released: 2026-10-04
 license: MIT
 repository-code: "https://github.com/sign-of-fourier/multivariate-probit"

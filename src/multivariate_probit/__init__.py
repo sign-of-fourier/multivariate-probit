@@ -4,7 +4,8 @@ A multivariate probit is a Gaussian squashing function wrapped around an
 arbitrary inner model. This package fits one by Inference Functions for Margins
 (IFM): margins first, dependence second. The inner model is pluggable -- linear
 by default, gradient boosting or random forests via named presets, anything
-scikit-learn-shaped via the adapter.
+scikit-learn-shaped via the adapter. For linear margins, ``fitter="modal"``
+fits by full maximum likelihood on a hosted GPU instead, with standard errors.
 
     >>> from multivariate_probit import MultivariateProbit
     >>> model = MultivariateProbit(inner="linear").fit(X, Y)
@@ -33,7 +34,7 @@ from .linear import ProbitRegressor
 from .model import MultivariateProbit
 from .results import MultivariateProbitProba
 
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 
 __all__ = [
     "MultivariateProbit",

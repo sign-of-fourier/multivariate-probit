@@ -1,7 +1,8 @@
 # API reference
 
 For the model and a quickstart see [../README.md](../README.md); for the
-estimation algorithm see [ifm.md](ifm.md).
+estimation algorithm see [ifm.md](ifm.md), and for the full-likelihood GPU fit
+see [fiml.md](fiml.md).
 
 ## MultivariateProbit
 
@@ -17,6 +18,8 @@ MultivariateProbit(
     random_state=None,
     evaluator="quadrature",
     resolution="high",
+    fitter="ifm",
+    n_draws=512,
 )
 ```
 
@@ -34,6 +37,8 @@ MultivariateProbit(
 | `random_state` | `None` | Controls the cross-fitting split and `sample`. |
 | `evaluator` | `"quadrature"` | Backend for the orthant probabilities behind `dependence="joint"` and every joint query: `"quadrature"`, `"scipy"` or `"orthant"`. See [Evaluators](#evaluators). |
 | `resolution` | `"high"` | Passed to `evaluator="orthant"`; ignored otherwise. |
+| `fitter` | `"ifm"` | `"ifm"`: the local two-stage fit. `"modal"`: full maximum likelihood on a hosted GPU service ([fiml.md](fiml.md)) — `inner="linear"` only, `inner_params` may set only `alpha`; `dependence`, `cv`, `optimizer` and `project_correlation` do not apply. Uploads X, Y and `sample_weight`. An int `random_state` seeds its Sobol draws (default seed 0). |
+| `n_draws` | `512` | Sobol draws per row for `fitter="modal"`; ignored otherwise. |
 
 > **Reading `calibration_`.** This is the Cox calibration slope, a deliberately
 > simple scale check: a probit of each outcome on its own fitted index. A slope
@@ -87,10 +92,14 @@ the
 | --- | --- | --- |
 | `inner_models_` | list, length d | The fitted margins, one per outcome. |
 | `correlation_` | (d, d) | The fitted Σ. |
-| `eta_` | (n, d) | The (cross-fitted) latent indices stage two was fitted on. |
+| `eta_` | (n, d) | The (cross-fitted) latent indices stage two was fitted on; for `fitter="modal"`, the in-sample indices of the fitted model. |
 | `calibration_` | (d, 2) | Intercept and slope of a probit of each outcome on its own fitted index — the calibration slope. See the note below. |
 | `nll_` | float | Negative log-likelihood at the end of the dependence fit. Joint and pairwise fits optimise different objectives, so the values are not comparable across settings. |
-| `optimize_result_` | OptimizeResult or None | The SciPy result for `dependence="joint"`. |
+| `optimize_result_` | OptimizeResult or None | The SciPy result for `dependence="joint"`. `None` for `fitter="modal"`. |
+| `stderr_`, `stderr_robust_` | dict | `fitter="modal"` only. Standard errors keyed `"coef"` (d, n_features), `"intercept"` (d,), `"correlation"` (d, d); inverse-Hessian and sandwich. |
+| `cov_params_`, `cov_params_robust_` | (k, k) | `fitter="modal"` only. The matching covariance matrices, ordered as `param_names_`. |
+| `param_names_` | list of str | `fitter="modal"` only. `coef[j,k]`, then `intercept[j]`, then `rho[j,k]` for j < k. |
+| `fit_result_` | dict | `fitter="modal"` only. `n_iter`, `converged`, `grad_max`, `n_draws`, `seed`. |
 | `n_outcomes_`, `n_features_in_` | int | |
 
 ### Methods
