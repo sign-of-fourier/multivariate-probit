@@ -94,7 +94,7 @@ the
 | `correlation_` | (d, d) | The fitted Σ. |
 | `eta_` | (n, d) | The (cross-fitted) latent indices stage two was fitted on; for `fitter="modal"`, the in-sample indices of the fitted model. |
 | `calibration_` | (d, 2) | Intercept and slope of a probit of each outcome on its own fitted index — the calibration slope. See the note below. |
-| `nll_` | float | Negative log-likelihood at the end of the dependence fit. Joint and pairwise fits optimise different objectives, so the values are not comparable across settings. |
+| `nll_` | float | Negative log-likelihood at the end of the dependence fit. Joint and pairwise fits optimise different objectives, so the values are not comparable across settings. For `fitter="modal"`, the simulated joint negative log-likelihood of all margins and Σ. |
 | `optimize_result_` | OptimizeResult or None | The SciPy result for `dependence="joint"`. `None` for `fitter="modal"`. |
 | `stderr_`, `stderr_robust_` | dict | `fitter="modal"` only. Standard errors keyed `"coef"` (d, n_features), `"intercept"` (d,), `"correlation"` (d, d); inverse-Hessian and sandwich. |
 | `cov_params_`, `cov_params_robust_` | (k, k) | `fitter="modal"` only. The matching covariance matrices, ordered as `param_names_`. |

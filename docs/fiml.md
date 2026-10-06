@@ -19,6 +19,27 @@ model.stderr_robust_          # sandwich standard errors
 model.predict_proba(X_new)    # runs locally, on any evaluator
 ```
 
+## What changes, and what doesn't
+
+Only `fitter="modal"` changes. After `fit`, the model is used exactly as an
+IFM fit is: `transform`, `predict_proba` and its joint queries, `joint_proba`,
+`score`, `sample`, `correlation_`, `inner_models_[j].coef_`, `get_params` /
+`set_params`. Prediction runs locally on the chosen `evaluator`.
+
+The differences:
+
+- `inner` must be `"linear"`; `inner_params` may set only `alpha`. Anything
+  else raises.
+- `dependence`, `cv`, `optimizer` and `project_correlation` do not apply.
+- `fit` uploads X, Y and `sample_weight` and waits for the service (see
+  [Cost](#cost)).
+- Extra attributes: `stderr_`, `stderr_robust_`, `cov_params_`,
+  `cov_params_robust_`, `param_names_`, `fit_result_`.
+- `eta_` holds in-sample indices (there is no cross-fitting); `nll_` is the
+  simulated joint negative log-likelihood; `optimize_result_` is `None`.
+- An int `random_state` seeds the Sobol draws; otherwise the seed is 0, so
+  repeated fits agree.
+
 ## When to use it instead of IFM
 
 - You need **standard errors** for the coefficients and for Σ. IFM does not
