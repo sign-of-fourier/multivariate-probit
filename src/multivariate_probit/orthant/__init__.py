@@ -60,8 +60,12 @@ def _import_extension(data, modname):
         fd = os.memfd_create(modname)
         try:
             os.write(fd, data)
+            path = "/proc/self/fd/%d" % fd
+            # The path has no .so suffix, so the loader must be given
+            # explicitly; inferred from the path, the spec would be None.
             spec = importlib.util.spec_from_file_location(
-                qualified, "/proc/self/fd/%d" % fd)
+                qualified, path,
+                loader=importlib.machinery.ExtensionFileLoader(qualified, path))
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             return mod
@@ -177,12 +181,10 @@ def _bind():
     key = _read_key()
     if key is not None:
         try:
-            mod = _import_extension(_decrypt_paid(key, tag), "_ocore")
+            data = _decrypt_paid(key, tag)
         except ImportError as e:
-            # Not a key problem: a missing dependency or a binary that won't
-            # load on this platform.  Say so rather than blaming the key.
             notice = ("orthant: key found but the paid binary could not be "
-                      "loaded (%s) -- running in FREE mode (n<=3, "
+                      "decrypted (%s) -- running in FREE mode (n<=3, "
                       "resolution='low').\n" % e)
             if (e.name or "").startswith("cryptography"):
                 notice += "         pip install cryptography\n"
@@ -191,8 +193,15 @@ def _bind():
                       "mode (n<=3, resolution='low').\n"
                       "         Renew or get a key: %s\n" % _URL)
         else:
-            globals()["cdf"] = mod.cdf
-            return "paid"
+            try:
+                globals()["cdf"] = _import_extension(data, "_ocore").cdf
+                return "paid"
+            except Exception as e:
+                # The key was right; loading the binary failed. Say so
+                # rather than blaming the key.
+                notice = ("orthant: key accepted but the paid binary could not "
+                          "be loaded (%s: %s) -- running in FREE mode (n<=3, "
+                          "resolution='low').\n" % (type(e).__name__, e))
     else:
         notice = ("orthant: FREE mode -- n<=3 and resolution='low' only. No key "
                   "in $ORTHANT_KEY or ~/.orthant/key when this module was "

@@ -198,3 +198,14 @@ def test_orthant_activate_after_import_without_environment(tmp_path):
     )
     assert out.returncode == 0, out.stderr
     assert "FREE mode" not in out.stderr
+
+
+@orthant_built
+def test_orthant_loads_an_extension_from_memory():
+    # The paid binary is loaded from bytes. Where os.memfd_create exists the
+    # path has no .so suffix, which once left the spec without a loader.
+    from multivariate_probit.orthant import _import_extension, _tag
+
+    with open(ORTHANT_DIR / f"_ofree.{_tag()}.so", "rb") as f:
+        mod = _import_extension(f.read(), "_ofree")
+    assert callable(mod.cdf)
