@@ -36,7 +36,7 @@ MultivariateProbit(
 | `project_correlation` | `True` | Project a pairwise estimate onto the nearest positive-definite correlation matrix. No effect when `dependence="joint"`. |
 | `random_state` | `None` | Controls the cross-fitting split and `sample`. |
 | `evaluator` | `"quadrature"` | Backend for the orthant probabilities behind `dependence="joint"` and every joint query: `"quadrature"`, `"scipy"` or `"orthant"`. See [Evaluators](#evaluators). |
-| `resolution` | `"high"` | Passed to `evaluator="orthant"`; ignored otherwise. |
+| `resolution` | `"high"` | Passed to `evaluator="orthant"`; ignored otherwise. `"high"`, `"highest"` (most accurate, about 2–3× the time of `"high"`: median error under 0.00005 on an equicorrelated Σ against up to 0.0001 at `"high"`, and 0.0001–0.0031 on a near-singular Σ against 0.0006–0.0061; see [benchmarks.md](benchmarks.md)), `"smooth"` (the cost of `"highest"`, continuous in the parameters with no threshold where the method changes, for gradient-based fitting; not uniformly more accurate than `"high"`) or `"low"` (cheapest). |
 | `fitter` | `"ifm"` | `"ifm"`: the local two-stage fit. `"modal"`: full maximum likelihood on a hosted GPU service ([fiml.md](fiml.md)) — `inner="linear"` only, `inner_params` may set only `alpha`; `dependence`, `cv`, `optimizer` and `project_correlation` do not apply. Uploads X, Y and `sample_weight`. An int `random_state` seeds its Sobol draws (default seed 0). |
 | `n_draws` | `512` | Sobol draws per row for `fitter="modal"`; ignored otherwise. |
 
@@ -77,7 +77,7 @@ queries on a pairwise fit still use the chosen backend.
 | --- | --- | --- |
 | `"quadrature"` | Genz's recursive conditioning with a fixed Gauss-Legendre rule of order `n_quad` (see [implementation.md](implementation.md)). | Deterministic and accurate. Cost grows as `n_quad ** (d - 2)`, so it becomes impractical well before d = 10. |
 | `"scipy"` | `scipy.stats.multivariate_normal.cdf`, one row at a time. | Reaches any d, but is slow per row and randomised: a `dependence="joint"` fit is not exactly reproducible, and its noisy objective can stall the simplex. |
-| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.11 and 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key`; see https://quantecarlo.com/orthant_key. Accuracy and speed against GHK and SciPy: [studies/ghk.md](studies/ghk.md). |
+| `"orthant"` | An optional compiled package bundled as `multivariate_probit.orthant`. Install with `pip install multivariate-probit[orthant]`. | Built for CPython 3.11 and 3.12 on x86-64 Linux only; elsewhere it raises `ImportError`. Without a key it accepts d ≤ 3 at `resolution="low"` only, and raises `ValueError` outside that. A key is read from `$ORTHANT_KEY` or `~/.orthant/key` at import, or passed at any time with `orthant.activate(key)` (returns `"paid"`; a wrong key raises `ValueError`). Each process needs its own key: on Spark, call `activate` inside the function the workers run, or set the variable in the cluster environment; see https://quantecarlo.com/orthant_key. Accuracy and speed against GHK and SciPy: [studies/ghk.md](studies/ghk.md). |
 
 For test sets too large for one machine, the same evaluator runs as a hosted
 GPU service, `quantecarlo.orthant_cdf`: about a second per million rows at

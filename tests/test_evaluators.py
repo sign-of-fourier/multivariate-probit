@@ -156,3 +156,45 @@ def test_orthant_with_key_runs_above_three(tmp_path):
         tmp_path=tmp_path,
     )
     assert out.returncode == 0, out.stderr
+
+
+@orthant_built
+def test_orthant_activate_rejects_a_wrong_key_and_stays_free(tmp_path):
+    out = _run_orthant(
+        """
+        from multivariate_probit import orthant
+        assert orthant.tier == "free"
+        try:
+            orthant.activate("not-a-key")
+        except ValueError as exc:
+            print(exc)
+        else:
+            raise SystemExit("no error")
+        assert orthant.tier == "free"
+        eta, Y, corr = problem(3)
+        pattern_prob(eta, Y, corr, evaluator="orthant", resolution="low")
+        """,
+        tmp_path=tmp_path,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "key not accepted" in out.stdout
+    assert out.stderr.count("FREE mode") == 1  # the notice comes once, at first use
+
+
+@orthant_built
+@pytest.mark.skipif(not os.environ.get("ORTHANT_KEY"), reason="needs $ORTHANT_KEY")
+def test_orthant_activate_after_import_without_environment(tmp_path):
+    out = _run_orthant(
+        f"""
+        from multivariate_probit import orthant
+        assert orthant.tier == "free"
+        assert orthant.activate({os.environ["ORTHANT_KEY"]!r}) == "paid"
+        eta, Y, corr = problem(5)
+        got = pattern_prob(eta, Y, corr, evaluator="orthant", resolution="highest")
+        ref = pattern_prob(eta, Y, corr)
+        assert np.abs(got - ref).max() < 1e-2, np.abs(got - ref).max()
+        """,
+        tmp_path=tmp_path,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "FREE mode" not in out.stderr

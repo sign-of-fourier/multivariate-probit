@@ -149,8 +149,10 @@ The backend is chosen with `evaluator=`:
 of magnitude faster than SciPy, at roughly the accuracy of 100-draw GHK
 simulation ([studies/ghk.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/studies/ghk.md)). It ships for CPython 3.11
 and 3.12 on x86-64 Linux (`pip install multivariate-probit[orthant]`); without
-a key it runs d ≤ 3 at `resolution="low"`. Key:
-[quantecarlo.com/orthant_key](https://quantecarlo.com/orthant_key).
+a key it runs d ≤ 3 at `resolution="low"`. The key is read from `$ORTHANT_KEY` or
+`~/.orthant/key` at import, or passed in code with
+`from multivariate_probit import orthant; orthant.activate(key)` (on Spark, call it inside
+the function the workers run). Key: [quantecarlo.com/orthant_key](https://quantecarlo.com/orthant_key).
 
 Benchmarks against other tools: [docs/benchmarks.md](https://github.com/sign-of-fourier/multivariate-probit/blob/main/docs/benchmarks.md).
 

@@ -5,10 +5,17 @@ On import this binds ``orthant.cdf`` to one of two binaries:
 * a valid key present  -> the paid binary is decrypted in memory and bound;
   full accuracy, unlimited dimension.
 * no key / bad key     -> the plaintext free binary is bound (n <= 3,
-  resolution="low" only) and a one-time notice is printed to stderr.
+  resolution="low" only) and a one-time notice is printed to stderr on the
+  first call.
 
-The key is read from ``$ORTHANT_KEY`` or ``~/.orthant/key``.  Get one at
-https://quantecarlo.com/orthant_key
+The key is read from ``$ORTHANT_KEY`` or ``~/.orthant/key`` at import, or
+passed at any time with ``activate(key)`` (no environment needed, no restart):
+
+    >>> from multivariate_probit import orthant
+    >>> orthant.activate("my-key")
+    'paid'
+
+Get a key at https://quantecarlo.com/orthant_key
 """
 import glob
 import importlib.machinery
@@ -18,7 +25,7 @@ import struct
 import sys
 import tempfile
 
-__all__ = ["cdf"]
+__all__ = ["cdf", "activate"]
 
 _URL = "https://quantecarlo.com/orthant_key"
 _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +33,7 @@ _MAGIC = b"ORT1"
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2 ** 14, 8, 1
 
 tier = "free"  # set to "paid" when the paid binary is bound
+_notice = None  # why we are in free mode; printed once, on the first free call
 
 
 def _read_key():
@@ -124,8 +132,43 @@ def _warn(msg):
         pass
 
 
+def _free_cdf(free):
+    """The free binary's cdf, printing the free-mode notice on its first call."""
+    def cdf(*args, **kwargs):
+        global _notice
+        if _notice:
+            _warn(_notice)
+            _notice = None
+        return free(*args, **kwargs)
+    cdf.__doc__ = free.__doc__
+    return cdf
+
+
+def activate(key):
+    """Bind the paid binary with ``key``, at any time; return ``"paid"``.
+
+    Unlike the import-time lookup this never falls back: a wrong key raises
+    ``ValueError`` and a binary that cannot load here raises ``ImportError``,
+    leaving the current binding unchanged.
+    """
+    global tier, _notice
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError("orthant: activate() needs a non-empty key string")
+    try:
+        data = _decrypt_paid(key.strip(), _tag())
+    except ImportError:
+        raise
+    except Exception as e:
+        raise ValueError("orthant: key not accepted by this binary (%s). "
+                         "Renew or get a key: %s" % (type(e).__name__, _URL)) from None
+    globals()["cdf"] = _import_extension(data, "_ocore").cdf
+    tier, _notice = "paid", None
+    return tier
+
+
 def _bind():
-    """Pick a binary, bind cdf, and return the tier."""
+    """Pick a binary at import, bind cdf, and return the tier."""
+    global _notice
     tag = _tag()
     key = _read_key()
     if key is not None:
@@ -147,12 +190,14 @@ def _bind():
             globals()["cdf"] = mod.cdf
             return "paid"
     else:
-        notice = ("orthant: FREE mode -- n<=3 and resolution='low' only.\n"
-                  "         For full accuracy and higher dimensions, get a "
-                  "key: %s\n" % _URL)
+        notice = ("orthant: FREE mode -- n<=3 and resolution='low' only. No key "
+                  "in $ORTHANT_KEY or ~/.orthant/key when this module was "
+                  "imported;\n"
+                  "         pass one with orthant.activate(key). Get a key: "
+                  "%s\n" % _URL)
 
-    globals()["cdf"] = _load_free(tag).cdf
-    _warn(notice)
+    globals()["cdf"] = _free_cdf(_load_free(tag).cdf)
+    _notice = notice
     return "free"
 
 

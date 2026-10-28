@@ -6,6 +6,11 @@ without measuring it. For *scoring* a fitted model, where that objection does
 not apply, how does GHK compare with the compiled `orthant` backend in
 accuracy and speed?
 
+> **Version note (2026-10).** This study measured the backend shipped in 0.2.1. Later builds integrate
+> `resolution="high"` on a finer rule and add `resolution="highest"`, which is more accurate at a few times the
+> cost. The tables below were not rerun; current numbers for both settings are in
+> [benchmarks.md](../benchmarks.md).
+
 ## Summary
 
 | | accuracy | speed (s per row) |

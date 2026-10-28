@@ -104,8 +104,8 @@ def run_cell(d, n_train=3000, n_test=100, rho=0.4, seed=0, sigma="equi"):
     if d <= 6:
         res["mvp quadrature"] = timed(lambda: model.set_params(evaluator="quadrature").joint_proba(Xte, Yte))
     if orthant is not None and (ORTHANT_KEYED or d <= 3):
-        r = "high" if ORTHANT_KEYED else "low"
-        res[f"mvp orthant ({r})"] = timed(lambda: model.set_params(evaluator="orthant", resolution=r).joint_proba(Xte, Yte))
+        for r in (("high", "highest") if ORTHANT_KEYED else ("low",)):
+            res[f"mvp orthant ({r})"] = timed(lambda: model.set_params(evaluator="orthant", resolution=r).joint_proba(Xte, Yte))
     res["SciPy default"] = timed(lambda: model.set_params(evaluator="scipy").joint_proba(Xte, Yte))
     if mvncd_batch is not None:
         st = np.moveaxis(stack, 2, 0)

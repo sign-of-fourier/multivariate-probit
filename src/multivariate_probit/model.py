@@ -165,8 +165,17 @@ class MultivariateProbit:
     n_quad : int, default=24
         Gauss-Legendre order for ``evaluator="quadrature"``. Lower it if
         fitting with many outcomes gets slow.
-    resolution : {"high", "low"}, default="high"
-        Passed to ``evaluator="orthant"``; ignored otherwise.
+    resolution : {"high", "highest", "smooth", "low"}, default="high"
+        Passed to ``evaluator="orthant"``; ignored otherwise. ``"highest"``
+        is the most accurate setting, at about 2-3 times the time of
+        ``"high"``: in docs/benchmarks.md its median error is under 0.00005 on
+        an equicorrelated covariance (``"high"``: up to 0.0001) and
+        0.0001-0.0031 on a near-singular one (``"high"``: 0.0006-0.0061).
+        ``"smooth"`` costs the same as ``"highest"`` and is continuous in the
+        parameters (no threshold where the method changes, near-duplicates
+        included), for gradient-based fitting; it is not uniformly more
+        accurate than ``"high"``. ``"low"`` is the cheapest. ``"highest"`` and
+        ``"smooth"`` are not available in 0.3.0 and earlier.
     optimizer : str, default="Nelder-Mead"
         Passed to ``scipy.optimize.minimize`` for ``dependence="joint"``.
         Derivative-free by design: the orthant likelihood has no convenient
