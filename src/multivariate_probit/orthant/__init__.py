@@ -156,7 +156,11 @@ def activate(key):
         raise ValueError("orthant: activate() needs a non-empty key string")
     try:
         data = _decrypt_paid(key.strip(), _tag())
-    except ImportError:
+    except ImportError as e:
+        if (e.name or "").startswith("cryptography"):
+            raise ImportError("orthant: activate() needs the cryptography package: "
+                              "pip install cryptography (or multivariate-probit[orthant])",
+                              name=e.name) from None
         raise
     except Exception as e:
         raise ValueError("orthant: key not accepted by this binary (%s). "
