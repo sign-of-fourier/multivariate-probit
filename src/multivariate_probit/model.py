@@ -160,7 +160,8 @@ class MultivariateProbit:
           and on any platform it was not built for, it raises.
         - ``"ghk"``: the GHK simulator with ``n_draws`` fixed scrambled Sobol
           draws per row. Deterministic, vectorised and free (no key), any
-          ``d``; error falls with ``n_draws``.
+          ``d``; error falls with ``n_draws``. Not available in 0.3.2 and
+          earlier.
 
         Results are clipped to [0, 1]. No backend ever falls back to another.
         ``dependence="pairwise"`` needs only bivariate probabilities, which
