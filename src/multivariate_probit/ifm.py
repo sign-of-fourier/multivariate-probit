@@ -114,14 +114,16 @@ def free_from_corr(corr):
 
 
 def joint_log_likelihood(
-    corr, eta, Y, weights=None, n_quad=24, evaluator="quadrature", resolution="high"
+    corr, eta, Y, weights=None, n_quad=24, evaluator="quadrature", resolution="high", n_draws=512
 ):
     """Full d-variate log-likelihood in ``corr``, with the margins held fixed.
 
-    ``evaluator``, ``n_quad`` and ``resolution`` select and tune the orthant
+    ``evaluator``, ``n_quad``, ``resolution`` and ``n_draws`` select and tune the orthant
     backend; see :func:`~multivariate_probit._mvn.lower_orthant`.
     """
-    prob = pattern_prob(eta, Y, corr, n_quad=n_quad, evaluator=evaluator, resolution=resolution)
+    prob = pattern_prob(
+        eta, Y, corr, n_quad=n_quad, evaluator=evaluator, resolution=resolution, n_draws=n_draws
+    )
     prob = np.clip(prob, _LL_EPS, None)
     ll = np.log(prob)
     if weights is None:
@@ -140,6 +142,7 @@ def joint_correlation(
     options=None,
     evaluator="quadrature",
     resolution="high",
+    n_draws=512,
 ):
     """Estimate the latent correlation matrix by full-information ML in ``R``.
 
@@ -181,7 +184,14 @@ def joint_correlation(
         if np.linalg.eigvalsh(corr).min() <= min_eigenvalue:
             return 1e10  # not positive definite -- push the optimizer away
         return -joint_log_likelihood(
-            corr, eta, Y, weights=weights, n_quad=n_quad, evaluator=evaluator, resolution=resolution
+            corr,
+            eta,
+            Y,
+            weights=weights,
+            n_quad=n_quad,
+            evaluator=evaluator,
+            resolution=resolution,
+            n_draws=n_draws,
         )
 
     result = minimize(neg_ll, free_from_corr(start), method=optimizer, options=options)

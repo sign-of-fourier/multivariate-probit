@@ -14,6 +14,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 import numpy as np
+from scipy.special import log_ndtr, ndtr, ndtri
 from scipy.stats import norm
 
 __all__ = [
@@ -36,9 +37,11 @@ _EPS = 1e-12
 # The backends that can evaluate a lower-orthant probability. The choice is a
 # speed/accuracy trade-off left to the caller: "quadrature" is the
 # deterministic evaluator below, "scipy" is scipy.stats.multivariate_normal.cdf
-# (randomised quasi-Monte Carlo, one row at a time), and "orthant" is the
-# optional compiled package bundled under ``multivariate_probit.orthant``.
-EVALUATORS = ("quadrature", "scipy", "orthant")
+# (randomised quasi-Monte Carlo, one row at a time), "orthant" is the
+# optional compiled package bundled under ``multivariate_probit.orthant``, and
+# "ghk" is the GHK simulator below with fixed scrambled Sobol draws
+# (deterministic, vectorised, any d).
+EVALUATORS = ("quadrature", "scipy", "orthant", "ghk")
 
 
 @lru_cache(maxsize=8)
@@ -136,6 +139,50 @@ def _scipy_orthant(A, corr_stack):
     return out
 
 
+@lru_cache(maxsize=8)
+def _sobol(dim, n_draws, seed):
+    """Scrambled Sobol points in (0, 1)^dim, cached so repeated calls (an
+    optimizer's objective) reuse the same draws."""
+    from scipy.stats import qmc
+
+    return qmc.Sobol(dim, scramble=True, seed=seed).random(n_draws)
+
+
+def _ghk_orthant(A, corr_stack, n_draws=512, seed=0, max_cells=2_000_000):
+    """GHK (Geweke-Hajivassiliou-Keane) estimate of the lower orthant, row by row.
+
+    Per row the variables are reordered by ascending limit, the correlation is
+    Cholesky-factored, and each draw samples the variables in sequence from
+    their truncated conditionals; the estimate is the mean over draws of the
+    product of the conditional probabilities. The draws are one scrambled
+    Sobol set shared by all rows (seed fixed), so the result is deterministic
+    and smooth in A and the correlations. Error falls with ``n_draws``.
+    """
+    n, d = A.shape
+    if d == 1:
+        return norm.cdf(A[:, 0])
+    S = np.moveaxis(corr_stack, 2, 0)
+    order = np.argsort(A, axis=1)
+    A = np.take_along_axis(A, order, axis=1)
+    S = S[np.arange(n)[:, None, None], order[:, :, None], order[:, None, :]]
+    L = np.linalg.cholesky(S)
+    U = _sobol(d - 1, int(n_draws), seed)
+    out = np.empty(n)
+    step = max(1, max_cells // (n_draws * d))
+    for lo in range(0, n, step):
+        a, Lc = A[lo:lo + step], L[lo:lo + step]
+        logp = np.zeros((len(a), n_draws))
+        z = np.zeros((len(a), n_draws, d - 1))
+        for j in range(d):
+            mu = z[:, :, :j] @ Lc[:, j, :j, None]
+            b = (a[:, j, None] - mu[:, :, 0]) / Lc[:, j, j, None]
+            logp += log_ndtr(b)
+            if j < d - 1:
+                z[:, :, j] = ndtri(np.clip(U[:, j] * ndtr(b), 1e-300, 1.0 - 1e-16))
+        out[lo:lo + step] = np.exp(logp).mean(axis=1)
+    return out
+
+
 def _compiled_orthant(A, corr_stack, resolution):
     try:
         from . import orthant
@@ -153,11 +200,11 @@ def _compiled_orthant(A, corr_stack, resolution):
     return np.asarray(prob, dtype=float)
 
 
-def lower_orthant(A, corr_stack, evaluator="quadrature", n_quad=24, resolution="high"):
+def lower_orthant(A, corr_stack, evaluator="quadrature", n_quad=24, resolution="high", n_draws=512):
     """:func:`mvn_orthant` with a choice of backend.
 
-    ``n_quad`` is used only by ``"quadrature"`` and ``resolution`` only by
-    ``"orthant"``. A backend that cannot run as asked raises; nothing falls
+    ``n_quad`` is used only by ``"quadrature"``, ``resolution`` only by
+    ``"orthant"`` and ``n_draws`` only by ``"ghk"``. A backend that cannot run as asked raises; nothing falls
     back to another backend. Results are clipped to [0, 1].
     """
     A = np.atleast_2d(np.asarray(A, dtype=float))
@@ -167,6 +214,8 @@ def lower_orthant(A, corr_stack, evaluator="quadrature", n_quad=24, resolution="
         prob = _scipy_orthant(A, corr_stack)
     elif evaluator == "orthant":
         prob = _compiled_orthant(A, corr_stack, resolution)
+    elif evaluator == "ghk":
+        prob = _ghk_orthant(A, corr_stack, n_draws=n_draws)
     else:
         raise ValueError(f"evaluator must be one of {EVALUATORS}; got {evaluator!r}")
     return np.clip(prob, 0.0, 1.0)
@@ -192,14 +241,14 @@ def signed_corr_stack(corr, signs):
     return stack
 
 
-def orthant_prob(upper, corr, n_quad=24, evaluator="quadrature", resolution="high"):
+def orthant_prob(upper, corr, n_quad=24, evaluator="quadrature", resolution="high", n_draws=512):
     """P(Z_j <= upper[i, j] for all j) for a single shared correlation matrix."""
     upper = np.atleast_2d(np.asarray(upper, dtype=float))
     stack = signed_corr_stack(corr, np.ones_like(upper))
-    return lower_orthant(upper, stack, evaluator, n_quad=n_quad, resolution=resolution)
+    return lower_orthant(upper, stack, evaluator, n_quad=n_quad, resolution=resolution, n_draws=n_draws)
 
 
-def pattern_prob(eta, Y, corr, n_quad=24, evaluator="quadrature", resolution="high"):
+def pattern_prob(eta, Y, corr, n_quad=24, evaluator="quadrature", resolution="high", n_draws=512):
     """``P(Y = y | x)`` for the multivariate probit, row by row.
 
     With ``s = 2y - 1`` the event ``{Y = y}`` is the orthant
@@ -215,5 +264,10 @@ def pattern_prob(eta, Y, corr, n_quad=24, evaluator="quadrature", resolution="hi
 
     signs = 2.0 * Y - 1.0
     return lower_orthant(
-        signs * eta, signed_corr_stack(corr, signs), evaluator, n_quad=n_quad, resolution=resolution
+        signs * eta,
+        signed_corr_stack(corr, signs),
+        evaluator,
+        n_quad=n_quad,
+        resolution=resolution,
+        n_draws=n_draws,
     )

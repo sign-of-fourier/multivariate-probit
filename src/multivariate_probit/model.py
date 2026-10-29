@@ -144,7 +144,7 @@ class MultivariateProbit:
         absorbed part of the noise, which attenuates the estimated
         correlations toward zero. ``None`` skips cross-fitting -- reasonable
         for the linear default, risky for anything that can overfit.
-    evaluator : {"quadrature", "scipy", "orthant"}, default="quadrature"
+    evaluator : {"quadrature", "scipy", "orthant", "ghk"}, default="quadrature"
         Backend for the orthant probabilities behind ``dependence="joint"``
         and every joint query. The speed/accuracy trade-off is the caller's:
 
@@ -158,6 +158,9 @@ class MultivariateProbit:
           Linux; ``pip install multivariate-probit[orthant]``). Without a key
           it accepts ``d <= 3`` and ``resolution="low"`` only; outside that,
           and on any platform it was not built for, it raises.
+        - ``"ghk"``: the GHK simulator with ``n_draws`` fixed scrambled Sobol
+          draws per row. Deterministic, vectorised and free (no key), any
+          ``d``; error falls with ``n_draws``.
 
         Results are clipped to [0, 1]. No backend ever falls back to another.
         ``dependence="pairwise"`` needs only bivariate probabilities, which
@@ -197,7 +200,8 @@ class MultivariateProbit:
         ``sample_weight`` are uploaded; only parameters come back, and every
         prediction afterwards runs locally on ``evaluator``.
     n_draws : int, default=512
-        Sobol draws per row for ``fitter="modal"``; ignored otherwise.
+        Sobol draws per row for ``fitter="modal"`` and ``evaluator="ghk"``;
+        ignored otherwise. Powers of 2 keep the Sobol set balanced.
 
     Attributes
     ----------
@@ -320,6 +324,7 @@ class MultivariateProbit:
                 optimizer=self.optimizer,
                 evaluator=self.evaluator,
                 resolution=self.resolution,
+                n_draws=self.n_draws,
             )
             self.nll_ = None if self.optimize_result_ is None else float(self.optimize_result_.fun)
         elif self.dependence == "pairwise":
@@ -525,6 +530,7 @@ class MultivariateProbit:
             n_quad=self.n_quad,
             evaluator=self.evaluator,
             resolution=self.resolution,
+            n_draws=self.n_draws,
         )
 
     def predict_marginal_proba(self, X):
@@ -556,6 +562,7 @@ class MultivariateProbit:
             n_quad=self.n_quad,
             evaluator=self.evaluator,
             resolution=self.resolution,
+            n_draws=self.n_draws,
         )
 
     def joint_log_proba(self, X, Y):

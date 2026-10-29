@@ -21,18 +21,24 @@ class MultivariateProbitProba:
     correlation matrix was estimated in the first place.
     """
 
-    def __init__(self, eta, corr, n_quad=24, evaluator="quadrature", resolution="high"):
+    def __init__(self, eta, corr, n_quad=24, evaluator="quadrature", resolution="high", n_draws=512):
         self.eta = np.atleast_2d(np.asarray(eta, dtype=float))
         self.marginal = norm.cdf(self.eta)
         self.corr = np.asarray(corr, dtype=float)
         self.n_quad = n_quad
         self.evaluator = evaluator
         self.resolution = resolution
+        self.n_draws = n_draws
 
     def _orthant(self, upper, corr):
         stack = signed_corr_stack(corr, np.ones_like(upper))
         return lower_orthant(
-            upper, stack, self.evaluator, n_quad=self.n_quad, resolution=self.resolution
+            upper,
+            stack,
+            self.evaluator,
+            n_quad=self.n_quad,
+            resolution=self.resolution,
+            n_draws=self.n_draws,
         )
 
     # ------------------------------------------------------ array behaviour
@@ -72,6 +78,7 @@ class MultivariateProbitProba:
             n_quad=self.n_quad,
             evaluator=self.evaluator,
             resolution=self.resolution,
+            n_draws=self.n_draws,
         )
 
     def all(self, outcomes=None):
@@ -102,6 +109,7 @@ class MultivariateProbitProba:
             n_quad=self.n_quad,
             evaluator=self.evaluator,
             resolution=self.resolution,
+            n_draws=self.n_draws,
         )
 
     def conditional(self, event, given):
