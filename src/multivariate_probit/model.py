@@ -169,7 +169,7 @@ class MultivariateProbit:
     n_quad : int, default=24
         Gauss-Legendre order for ``evaluator="quadrature"``. Lower it if
         fitting with many outcomes gets slow.
-    resolution : {"high", "highest", "smooth", "low"}, default="high"
+    resolution : {"high", "highest", "smooth", "low", "ovus"}, default="high"
         Passed to ``evaluator="orthant"``; ignored otherwise. ``"highest"``
         is the most accurate setting, at about 2-3 times the time of
         ``"high"``: in docs/benchmarks.md its median error is under 0.00005 on
@@ -178,8 +178,11 @@ class MultivariateProbit:
         ``"smooth"`` costs the same as ``"highest"`` and is continuous in the
         parameters (no threshold where the method changes, near-duplicates
         included), for gradient-based fitting; it is not uniformly more
-        accurate than ``"high"``. ``"low"`` is the cheapest. ``"highest"`` and
-        ``"smooth"`` are not available in 0.3.0 and earlier.
+        accurate than ``"high"``. ``"low"`` is the cheapest. ``"ovus"`` is
+        Bhat's (2018) OVUS approximation (the one inside MACML), same values
+        as pybhatlib's ``mvncd(method="ovus")``, for side-by-side
+        comparison. ``"highest"`` and ``"smooth"`` are not available in 0.3.0
+        and earlier, ``"ovus"`` not before 0.3.4.
     optimizer : str, default="Nelder-Mead"
         Passed to ``scipy.optimize.minimize`` for ``dependence="joint"``.
         Derivative-free by design: the orthant likelihood has no convenient
